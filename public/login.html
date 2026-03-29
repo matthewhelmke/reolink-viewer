@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reolink Viewer — Sign in</title>
+  <style>
+    :root {
+      --bg:       #0f1117;
+      --card-bg:  #252836;
+      --border:   #2d3148;
+      --text:     #e2e8f0;
+      --muted:    #8892a4;
+      --accent:   #4f9cf9;
+      --danger:   #fc8181;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem 2.5rem;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.02em;
+      margin-bottom: 0.3rem;
+    }
+
+    .subtitle {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 1.75rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 1.1rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="password"]:focus { border-color: var(--accent); }
+
+    button {
+      width: 100%;
+      padding: 0.55rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.12s;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.1); }
+    button:disabled { opacity: 0.5; cursor: default; }
+
+    .error {
+      margin-top: 0.9rem;
+      font-size: 0.76rem;
+      color: var(--danger);
+      min-height: 1em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Reolink Viewer</h1>
+    <p class="subtitle">Enter your password to continue.</p>
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" autofocus>
+    <button id="btn">Sign in</button>
+    <p class="error" id="error"></p>
+  </div>
+  <script>
+    const input = document.getElementById('password');
+    const btn   = document.getElementById('btn');
+    const error = document.getElementById('error');
+
+    async function login() {
+      const password = input.value;
+      if (!password) return;
+      btn.disabled = true;
+      error.textContent = '';
+      try {
+        const resp = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        if (resp.ok) {
+          window.location.replace('/');
+        } else {
+          const data = await resp.json().catch(() => ({}));
+          error.textContent = data.error ?? 'Sign in failed.';
+          input.value = '';
+          input.focus();
+        }
+      } catch {
+        error.textContent = 'Network error — try again.';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    btn.addEventListener('click', login);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+  </script>
+</body>
+</html>

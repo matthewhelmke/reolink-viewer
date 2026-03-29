@@ -1,0 +1,26 @@
+{
+  "name": "reolink-viewer",
+  "version": "0.0.1",
+  "description": "A web application that can run on a local area network (LAN) and access and manage a Reolink Hub Pro and any Reolink cameras and devices connected to it.",
+  "license": "MIT",
+  "author": "Matthew Helmke",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node --enable-source-maps dist/index.js"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "flv.js": "^1.6.2",
+    "reolink-nvr-api": "^0.3.0"
+  }
+}
