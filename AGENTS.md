@@ -167,14 +167,14 @@ These are gaps in the current implementation that are documented for future work
 12. **Camera ordering** — ▲▼ buttons per sidebar nav item; order stored in `localStorage` under `reolink-camera-order`; new cameras auto-append to the end of any existing order
 13. **High quality live view** — `GET /api/rtsp/:channel` spawns FFmpeg reading `rtsp://user:pass@host:554/h264Preview_0N_main`, outputs frag MP4 to the browser; Live tab now has Low quality / High quality / Stop buttons
 14. **Web app authentication** — Stateless HMAC-signed cookies (`rv_session`, 1-year Max-Age); `viewer` and `admin` roles determined by which password matches; login page at `/login`; Sign out button in sidebar; `GET /api/me` returns current role; three new required env vars: `VIEWER_PASSWORD`, `ADMIN_PASSWORD`, `SESSION_SECRET`
+15. **Docker Compose deployment** — Multi-stage Dockerfile (`node:20-slim` build stage, `ubuntu:25.04` runtime); FFmpeg 7.1.1 installed via apt; `FFMPEG_PATH` env var added to `src/index.ts` with `bin/ffmpeg` as dev fallback; repository initialized as a git repo and published to GitHub at matthewhelmke/reolink-viewer
 
 ## Next Tasks
 
 Future work in rough priority order:
 
-1. **Docker Compose deployment** — Matthew's always-on dev machine ("monster") serving the app to family on LAN. The project will also be initialized as a Git repository (moving from `/home/matt/workspace/reolink-viewer` to `/home/matt/gitrepos/reolink-viewer`) in the same session.
+1. **Admin mode features** — Device management and configuration. Requires ONVIF to be enabled on the hub.
 2. **Dynamic camera discovery** — `loadCameras()` runs only once at page load; adding a camera requires a page refresh.
-3. **Admin mode features** — Device management and configuration. Requires ONVIF to be enabled on the hub.
 
 ## Quality Requirements
 
