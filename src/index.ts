@@ -95,7 +95,7 @@ function hasFiles(result: unknown): boolean {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FFMPEG_BIN = path.join(__dirname, '..', 'bin', 'ffmpeg');
+const FFMPEG_BIN = process.env['FFMPEG_PATH'] ?? path.join(__dirname, '..', 'bin', 'ffmpeg');
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // Stateless signed cookies: no server-side session store, so container restarts

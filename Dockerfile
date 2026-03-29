@@ -31,5 +31,6 @@ RUN npm ci --omit=dev
 COPY --from=builder /build/dist ./dist
 COPY public/ ./public/
 
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
