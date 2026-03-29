@@ -16,7 +16,7 @@ I can do everything this app does using the official Android app from Reolink, s
 > **Hardware note:** The [Reolink Hub Pro](https://reolink.com/product/reolink-home-hub-pro/) is the only hub device available for testing. Behavior may differ on Reolink NVR devices.
 
 
-### What it does now (Basic mode, partial)
+### What it does now (Basic mode)
 
 - Displays hub device info (model, firmware, hardware version) in a sidebar
 - Shows each connected camera in the sidebar with a colored status dot, a snapshot thumbnail that refreshes every 30 seconds, and a last-refreshed timestamp
@@ -32,7 +32,6 @@ I can do everything this app does using the official Android app from Reolink, s
 
 ### Next steps
 
-- **Docker Compose deployment** — serve to family across the LAN from an always-on machine
 - **Dynamic camera discovery** — add/remove camera cards without a page reload
 - **Admin mode** — device management and configuration via ONVIF
 
@@ -74,6 +73,8 @@ Some aspects of this application require specific settings in the Reolink Hub Pr
 
 #### Installing FFmpeg
 
+> **Docker users:** FFmpeg is installed automatically when building the Docker image. Skip this section if you are deploying with Docker Compose.
+
 The Ubuntu 24.04 packaged FFmpeg (6.1.1) does not support Reolink's HEVC recording format. A git snapshot build from John Van Sickle's static builds is required:
 
 ```bash
@@ -90,7 +91,11 @@ The binary goes in `bin/ffmpeg` relative to the project root. The `bin/` directo
 
 ### Installing
 
-1. Copy the `reolink-viewer` directory to any machine on the same LAN as your Reolink hub.
+1. Clone the repository:
+   ```
+   git clone git@github.com:matthewhelmke/reolink-viewer.git
+   ```
+   Or with HTTPS: `git clone https://github.com/matthewhelmke/reolink-viewer.git`
 2. Install Node.js dependencies:
    ```
    npm install
@@ -111,12 +116,18 @@ The binary goes in `bin/ffmpeg` relative to the project root. The `bin/` directo
 
 ### Running
 
+**Docker (recommended for LAN deployment)** — builds the image and runs in the background:
+```
+docker compose up --build -d
+```
+The first build takes a few minutes while apt downloads FFmpeg. Subsequent starts reuse the cached image — omit `--build` unless you have code changes. Access the app at `http://<host-ip>:3000` from any device on the LAN.
+
 **Development** — runs directly from TypeScript source, no build step required:
 ```
 npm run dev
 ```
 
-**Production** — compile first, then run the compiled output:
+**Production (without Docker)** — compile first, then run the compiled output:
 ```
 npm run build
 npm start
@@ -136,16 +147,19 @@ If authentication fails at startup, the server exits immediately with an error m
 
 ```
 reolink-viewer/
+├── .dockerignore         Files excluded from the Docker build context
 ├── .env                  Hub credentials (gitignored, never committed)
 ├── .gitignore
 ├── AGENTS.md             Instructions and context for AI agents working on this project
-├── NEXT_SESSION.md       Starting-point notes for the next development session
+├── docker-compose.yml    Docker Compose service definition
+├── Dockerfile            Multi-stage build: TypeScript compile + ubuntu:25.04 runtime
+├── LICENSE.md            MIT License
 ├── package.json          Project metadata and npm scripts
 ├── package-lock.json     Locked dependency versions
 ├── README.md
 ├── tsconfig.json         TypeScript compiler configuration
 ├── bin/                  Local binaries (gitignored)
-│   └── ffmpeg            FFmpeg git snapshot — required for playback, not committed
+│   └── ffmpeg            FFmpeg git snapshot — required for dev without Docker, not committed
 ├── public/
 │   ├── index.html        Browser frontend — structure and styles
 │   ├── login.html        Login page (self-contained, no auth required to load)
