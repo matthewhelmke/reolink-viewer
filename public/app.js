@@ -795,6 +795,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.replace('/login');
     return;
   }
+  const { role } = await meResp.json();
+
+  if (role === 'admin') {
+    const adminLink = document.createElement('a');
+    adminLink.href = '/admin';
+    adminLink.textContent = 'Admin';
+    adminLink.style.cssText =
+      'display:block;margin-bottom:0.45rem;padding:0.35rem 0.75rem;' +
+      'border:1px solid var(--border);border-radius:5px;' +
+      'color:var(--text-muted);font-size:0.75rem;font-weight:600;' +
+      'text-decoration:none;text-align:center;transition:border-color 0.12s,color 0.12s;';
+    adminLink.addEventListener('mouseenter', () => {
+      adminLink.style.borderColor = 'var(--accent)';
+      adminLink.style.color = 'var(--accent)';
+    });
+    adminLink.addEventListener('mouseleave', () => {
+      adminLink.style.borderColor = 'var(--border)';
+      adminLink.style.color = 'var(--text-muted)';
+    });
+    const footer = document.getElementById('sidebar-footer');
+    footer.insertBefore(adminLink, footer.firstChild);
+  }
 
   document.getElementById('logout-btn').addEventListener('click', async () => {
     await fetch('/api/logout', { method: 'POST' });

@@ -488,3 +488,59 @@ describe('GET /api/rtsp/:channel — input validation', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ── requireAdmin middleware ───────────────────────────────────────────────────
+
+describe('requireAdmin middleware', () => {
+  it('returns 403 for viewer on admin API routes', async () => {
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/admin/i);
+  });
+
+  it('returns 401 for unauthenticated requests to admin API routes', async () => {
+    const res = await request(app).get('/api/admin/ability');
+    expect(res.status).toBe(401);
+  });
+
+  it('redirects viewer to / when accessing /admin page', async () => {
+    const res = await request(app)
+      .get('/admin')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/');
+  });
+});
+
+// ── GET /api/admin/ability ────────────────────────────────────────────────────
+
+describe('GET /api/admin/ability', () => {
+  it('returns the GetAbility response from the hub', async () => {
+    const ability = { Ability: { GetEvents: { permit: 3 } } };
+    mockClient.api.mockResolvedValueOnce(ability);
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(ability);
+    expect(mockClient.api).toHaveBeenCalledWith('GetAbility', { User: { userName: testConfig.nvrUser } });
+  });
+
+  it('returns 503 when the hub is unreachable', async () => {
+    mockClient.api.mockRejectedValueOnce(new Error('connection refused'));
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 502 for a hub API error', async () => {
+    mockClient.api.mockRejectedValueOnce(new ReolinkHttpError(200, -9, 'Not supported'));
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(502);
+  });
+});

@@ -408,5 +408,37 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
     }
   });
 
+  // ── Admin routes ─────────────────────────────────────────────────────────────
+
+  function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (res.locals['role'] === 'admin') { next(); return; }
+    if (req.path.startsWith('/api/')) {
+      res.status(403).json({ error: 'Admin access required' });
+    } else {
+      res.redirect('/');
+    }
+  }
+
+  app.get('/admin', requireAdmin, (_req, res) => {
+    res.sendFile(path.join(publicDir, 'admin.html'));
+  });
+
+  app.get('/api/admin/ability', requireAdmin, async (_req, res) => {
+    try {
+      // The Hub Pro requires userName nested under a User key; the SDK helper passes
+      // it at the top level which causes fcgi read failed (-11).
+      const ability = await withRelogin(() =>
+        client.api('GetAbility', { User: { userName: nvrUser } })
+      );
+      res.json(ability);
+    } catch (error) {
+      console.error('[admin/ability] error:', error instanceof Error ? error.message : error);
+      if (error instanceof ReolinkHttpError) {
+        console.error(`[admin/ability] rspCode=${error.rspCode} detail=${error.detail}`);
+      }
+      sendError(res, error);
+    }
+  });
+
   return app;
 }

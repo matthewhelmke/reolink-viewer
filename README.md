@@ -30,10 +30,26 @@ I can do everything this app does using the official Android app from Reolink, s
 - Password-protected: viewer and admin roles, 1-year session cookies, login page at `/login`
 
 
+### Admin mode (in progress — v0.0.3-beta)
+
+Admin mode is under active development and incomplete. What exists today:
+
+- A separate `/admin` page, accessible only to the `admin` role
+- An **Admin** link appears in the viewer sidebar for admin sessions
+- The admin page displays hub info, connected camera list, and a raw dump of the hub's `GetAbility` response (useful for feature discovery)
+- `requireAdmin` middleware gates all `/api/admin/*` routes and the `/admin` page — viewer-role sessions receive 403 on API routes and are redirected to `/` on page routes
+
+What is planned but not yet built:
+- **Cross-camera event history** — search all channels in parallel, merged by timestamp, with event-type filtering
+- **PTZ control** — only if `GetAbility` confirms a connected camera supports it
+- **Encoding and AI config** — read-only view of `GetEnc` and `GetAiCfg` per channel, write ops later
+
+Note: this app uses the [Reolink native HTTPS API](https://github.com/verheesj/reolink-api) exclusively. ONVIF is not used and has been disabled on the hub.
+
 ### Next steps
 
 - **Dynamic camera discovery** — add/remove camera cards without a page reload
-- **Admin mode** — device management and configuration via ONVIF
+- **Admin mode** — complete event history, PTZ (if supported), and encoding/AI config views
 
 
 ### A note on live video quality
@@ -61,7 +77,7 @@ Some aspects of this application require specific settings in the Reolink Hub Pr
 | HTTP    | Off           | Not needed; tested and disabled. |
 | RTSP    | On (default)  | On by default. Not used by the current implementation but reserved for a future higher-quality streaming option. |
 | RTMP    | Off           | Tested and disabled. Not usable by the browser or server. |
-| ONVIF   | On            | Will be required for Admin mode features. |
+| ONVIF   | **Off**       | Disabled 2026-04-19 — not used by this app (native Reolink API only). Disabling reduces attack surface. |
 
 
 ## Getting started
@@ -164,12 +180,18 @@ reolink-viewer/
 │   ├── index.html        Browser frontend — structure and styles
 │   ├── login.html        Login page (self-contained, no auth required to load)
 │   ├── app.js            Browser frontend — vanilla JS, no framework
+│   ├── admin.html        Admin page (in progress)
+│   ├── admin.js          Admin page frontend (in progress)
 │   └── js/
 │       └── flv.min.js    flv.js library (included but not currently used)
 └── src/
-    ├── index.ts          Server entry point: Express + Reolink client + API endpoints
-    └── flv-transform.ts  FLV transform stream: rewrites Reolink codec-12 HEVC tags
-                          to Enhanced FLV 'hvc1' for FFmpeg compatibility
+    ├── index.ts          Server entry point: env validation, Reolink client, app.listen
+    ├── app.ts            Express app factory: all routes and middleware
+    ├── utils.ts          Pure helper functions (cookies, session signing, error handling)
+    ├── flv-transform.ts  FLV transform stream: rewrites Reolink codec-12 HEVC tags
+    │                     to Enhanced FLV 'hvc1' for FFmpeg compatibility
+    ├── flv-transform.test.ts  Unit tests for FLV transform
+    └── index.test.ts     Integration tests for all routes and utilities
 ```
 
 `dist/` (compiled output) and `node_modules/` (dependencies) are generated locally and are gitignored.
