@@ -178,8 +178,9 @@ Future work in rough priority order:
 
 ## Quality Requirements
 
-- Code must be clean, readable, and maintainable
+- Code must be clean, readable, and maintainable (by human readers, so super clear!)
 - Follow TypeScript best practices with type safety throughout
+- Include unit and functional tests with logging and clear error messaging in UI (THIS IS NEW, BUT FROM NOW ON SHOULD BE DONE WHILE/BEFORE CODE IS WRITTEN--TEST-DRIVEN DEVELOPMENT IS TO BE THE NORM)
 - Include necessary error handling and logging
 - Securely handle authentication tokens
 - Do not hardcode sensitive information; use `.env` for all credentials
