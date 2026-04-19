@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 
 // Hoisted above imports by Vitest's transform — intercepts these modules in app.ts too
-vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn() }));
+vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn(), getAbility: vi.fn() }));
 vi.mock('reolink-nvr-api/snapshot', () => ({ snapToBuffer: vi.fn() }));
 
-import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
+import { getDevInfo, getAbility } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
@@ -45,6 +45,7 @@ const app = createApp(mockClient as any, testConfig);
 
 const mockGetDevInfo   = vi.mocked(getDevInfo);
 const mockSnapToBuffer = vi.mocked(snapToBuffer);
+const mockGetAbility   = vi.mocked(getAbility);
 
 /** Return a valid session cookie header value for the given role. */
 function authCookie(role: string): string {
@@ -486,5 +487,60 @@ describe('GET /api/rtsp/:channel — input validation', () => {
       .get('/api/rtsp/abc')
       .set('Cookie', authCookie('viewer'));
     expect(res.status).toBe(400);
+  });
+});
+
+// ── requireAdmin middleware ───────────────────────────────────────────────────
+
+describe('requireAdmin middleware', () => {
+  it('returns 403 for viewer on admin API routes', async () => {
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/admin/i);
+  });
+
+  it('returns 401 for unauthenticated requests to admin API routes', async () => {
+    const res = await request(app).get('/api/admin/ability');
+    expect(res.status).toBe(401);
+  });
+
+  it('redirects viewer to / when accessing /admin page', async () => {
+    const res = await request(app)
+      .get('/admin')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(302);
+    expect(res.headers['location']).toBe('/');
+  });
+});
+
+// ── GET /api/admin/ability ────────────────────────────────────────────────────
+
+describe('GET /api/admin/ability', () => {
+  it('returns the GetAbility response from the hub', async () => {
+    const ability = { Ability: { GetEvents: { permit: 3 } } };
+    mockGetAbility.mockResolvedValueOnce(ability as never);
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(ability);
+  });
+
+  it('returns 503 when the hub is unreachable', async () => {
+    mockGetAbility.mockRejectedValueOnce(new Error('connection refused'));
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 502 for a hub API error', async () => {
+    mockGetAbility.mockRejectedValueOnce(new ReolinkHttpError(200, -9, 'Not supported'));
+    const res = await request(app)
+      .get('/api/admin/ability')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(502);
   });
 });

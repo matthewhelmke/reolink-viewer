@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 
 import { ReolinkFLVTransform } from './flv-transform.js';
 import type { ReolinkClient } from 'reolink-nvr-api';
-import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
+import { getAbility, getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
@@ -403,6 +403,30 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
       // to try alternative commands such as GetDevInfo with channel params or GetAbility.
       const devices = await withRelogin(() => client.api('GetChannelstatus'));
       res.json(devices);
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // ── Admin routes ─────────────────────────────────────────────────────────────
+
+  function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (res.locals['role'] === 'admin') { next(); return; }
+    if (req.path.startsWith('/api/')) {
+      res.status(403).json({ error: 'Admin access required' });
+    } else {
+      res.redirect('/');
+    }
+  }
+
+  app.get('/admin', requireAdmin, (_req, res) => {
+    res.sendFile(path.join(publicDir, 'admin.html'));
+  });
+
+  app.get('/api/admin/ability', requireAdmin, async (_req, res) => {
+    try {
+      const ability = await withRelogin(() => getAbility(client));
+      res.json(ability);
     } catch (error) {
       sendError(res, error);
     }
