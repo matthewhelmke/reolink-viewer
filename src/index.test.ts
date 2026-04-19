@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 
 // Hoisted above imports by Vitest's transform — intercepts these modules in app.ts too
-vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn(), getAbility: vi.fn() }));
+vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn() }));
 vi.mock('reolink-nvr-api/snapshot', () => ({ snapToBuffer: vi.fn() }));
 
-import { getDevInfo, getAbility } from 'reolink-nvr-api/endpoints/system';
+import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
@@ -45,7 +45,6 @@ const app = createApp(mockClient as any, testConfig);
 
 const mockGetDevInfo   = vi.mocked(getDevInfo);
 const mockSnapToBuffer = vi.mocked(snapToBuffer);
-const mockGetAbility   = vi.mocked(getAbility);
 
 /** Return a valid session cookie header value for the given role. */
 function authCookie(role: string): string {
@@ -520,16 +519,17 @@ describe('requireAdmin middleware', () => {
 describe('GET /api/admin/ability', () => {
   it('returns the GetAbility response from the hub', async () => {
     const ability = { Ability: { GetEvents: { permit: 3 } } };
-    mockGetAbility.mockResolvedValueOnce(ability as never);
+    mockClient.api.mockResolvedValueOnce(ability);
     const res = await request(app)
       .get('/api/admin/ability')
       .set('Cookie', authCookie('admin'));
     expect(res.status).toBe(200);
     expect(res.body).toEqual(ability);
+    expect(mockClient.api).toHaveBeenCalledWith('GetAbility', { User: { userName: testConfig.nvrUser } });
   });
 
   it('returns 503 when the hub is unreachable', async () => {
-    mockGetAbility.mockRejectedValueOnce(new Error('connection refused'));
+    mockClient.api.mockRejectedValueOnce(new Error('connection refused'));
     const res = await request(app)
       .get('/api/admin/ability')
       .set('Cookie', authCookie('admin'));
@@ -537,7 +537,7 @@ describe('GET /api/admin/ability', () => {
   });
 
   it('returns 502 for a hub API error', async () => {
-    mockGetAbility.mockRejectedValueOnce(new ReolinkHttpError(200, -9, 'Not supported'));
+    mockClient.api.mockRejectedValueOnce(new ReolinkHttpError(200, -9, 'Not supported'));
     const res = await request(app)
       .get('/api/admin/ability')
       .set('Cookie', authCookie('admin'));

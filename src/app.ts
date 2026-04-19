@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 
 import { ReolinkFLVTransform } from './flv-transform.js';
 import type { ReolinkClient } from 'reolink-nvr-api';
-import { getAbility, getDevInfo } from 'reolink-nvr-api/endpoints/system';
+import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
@@ -425,9 +425,17 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
 
   app.get('/api/admin/ability', requireAdmin, async (_req, res) => {
     try {
-      const ability = await withRelogin(() => getAbility(client));
+      // The Hub Pro requires userName nested under a User key; the SDK helper passes
+      // it at the top level which causes fcgi read failed (-11).
+      const ability = await withRelogin(() =>
+        client.api('GetAbility', { User: { userName: nvrUser } })
+      );
       res.json(ability);
     } catch (error) {
+      console.error('[admin/ability] error:', error instanceof Error ? error.message : error);
+      if (error instanceof ReolinkHttpError) {
+        console.error(`[admin/ability] rspCode=${error.rspCode} detail=${error.detail}`);
+      }
       sendError(res, error);
     }
   });
