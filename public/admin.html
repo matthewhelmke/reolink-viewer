@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reolink Viewer — Admin</title>
+  <style>
+    :root {
+      --bg:         #0f1117;
+      --sidebar-bg: #1a1d2e;
+      --card-bg:    #252836;
+      --border:     #2d3148;
+      --text:       #e2e8f0;
+      --text-muted: #8892a4;
+      --accent:     #4f9cf9;
+      --online:     #48bb78;
+      --offline:    #4a5568;
+      --sleeping:   #ed8936;
+      --danger:     #fc8181;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1.5rem;
+      background: var(--sidebar-bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #topbar h1 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .admin-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      background: rgba(79,156,249,0.18);
+      color: var(--accent);
+      border: 1px solid rgba(79,156,249,0.35);
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+    }
+
+    .topbar-spacer { flex: 1; }
+
+    .topbar-link {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.12s;
+    }
+    .topbar-link:hover { color: var(--text); }
+
+    .topbar-divider {
+      width: 1px;
+      height: 1rem;
+      background: var(--border);
+    }
+
+    #signout-btn {
+      padding: 0.3rem 0.7rem;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    #signout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── Content ── */
+    #content {
+      flex: 1;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .card-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 700px) {
+      .card-row { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,0.2);
+    }
+
+    .card-header h2 {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .card-body {
+      padding: 0.85rem 1rem;
+    }
+
+    .section-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    dl.info-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.35rem 0.75rem;
+      font-size: 0.82rem;
+    }
+    dl.info-grid dt { color: var(--text-muted); white-space: nowrap; }
+    dl.info-grid dd { color: var(--text); font-weight: 500; overflow-wrap: break-word; min-width: 0; }
+
+    .loading-text {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .error-text {
+      font-size: 0.82rem;
+      color: var(--danger);
+    }
+
+    /* Cameras list */
+    #cameras-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .cam-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.45rem 0.6rem;
+      background: rgba(0,0,0,0.18);
+      border-radius: 5px;
+      font-size: 0.82rem;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.online   { background: var(--online); }
+    .status-dot.offline  { background: var(--offline); }
+    .status-dot.sleeping { background: var(--sleeping); }
+
+    .cam-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cam-ch   { color: var(--text-muted); font-size: 0.75rem; }
+    .cam-model { color: var(--text-muted); font-size: 0.75rem; }
+
+    /* Capability JSON */
+    #ability-pre {
+      font-size: 0.74rem;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.55;
+      max-height: 55vh;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <header id="topbar">
+    <h1>Reolink Viewer</h1>
+    <span class="admin-badge">Admin</span>
+    <div class="topbar-spacer"></div>
+    <a href="/" class="topbar-link">Viewer</a>
+    <div class="topbar-divider"></div>
+    <button id="signout-btn">Sign out</button>
+  </header>
+
+  <div id="content">
+    <div class="card-row">
+      <div class="card" id="hub-info-card">
+        <div class="card-header"><h2>Hub Info</h2></div>
+        <div class="card-body" id="hub-info-body">
+          <span class="loading-text">Loading&hellip;</span>
+        </div>
+      </div>
+      <div class="card" id="cameras-card">
+        <div class="card-header"><h2>Cameras</h2></div>
+        <div class="card-body">
+          <div id="cameras-list"><span class="loading-text">Loading&hellip;</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Hub Capabilities</h2></div>
+      <div class="card-body">
+        <pre id="ability-pre"><span class="loading-text">Loading&hellip;</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
