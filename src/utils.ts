@@ -64,6 +64,14 @@ export function hasFiles(result: unknown): boolean {
   return Array.isArray(sr['File']) && (sr['File'] as unknown[]).length > 0;
 }
 
+// Parses YYYY-MM-DD as a local-time midnight Date. Returns null for anything else.
+export function parseDateLocal(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(date.getTime()) ? null : date;
+}
+
 export function sendError(res: Response, error: unknown): void {
   if (error instanceof ReolinkHttpError) {
     if (error.rspCode === -1) {
