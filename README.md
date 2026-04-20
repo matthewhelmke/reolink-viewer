@@ -13,7 +13,7 @@ I can do everything this app does using the official Android app from Reolink, s
 
 > **LAN only.** This app is designed exclusively for use on a trusted home LAN. Do not expose it to the internet.
 
-> **Hardware note:** The [Reolink Hub Pro](https://reolink.com/product/reolink-home-hub-pro/) is the only hub device available for testing. Behavior may differ on Reolink NVR devices.
+> **Hardware note:** The [Reolink Hub Pro](https://reolink.com/product/reolink-home-hub-pro/) is the only hub device available for testing. Behavior may differ on other Reolink Hub and NVR devices.
 
 
 ### What it does now (Basic mode)
@@ -75,7 +75,7 @@ Some aspects of this application require specific settings in the Reolink Hub Pr
 |---------|---------------|-------|
 | HTTPS   | **On**        | All API calls and snapshot fetches use HTTPS. Required. |
 | HTTP    | Off           | Not needed; tested and disabled. |
-| RTSP    | On (default)  | On by default. Not used by the current implementation but reserved for a future higher-quality streaming option. |
+| RTSP    | On            | On and used by the higher-quality streaming option. |
 | RTMP    | Off           | Tested and disabled. Not usable by the browser or server. |
 | ONVIF   | **Off**       | Disabled 2026-04-19 — not used by this app (native Reolink API only). Disabling reduces attack surface. |
 
