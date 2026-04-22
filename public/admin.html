@@ -202,6 +202,179 @@
       max-height: 55vh;
       overflow-y: auto;
     }
+
+    /* ── Shared: search button ── */
+    .search-btn {
+      padding: 0.35rem 0.9rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: filter 0.12s;
+    }
+    .search-btn:hover:not(:disabled) { filter: brightness(1.12); }
+    .search-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Shared: loading spinner ── */
+    .playback-loading {
+      background: #000;
+      border-radius: 4px;
+      padding: 2rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.65rem;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    .loading-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Event history ── */
+    .event-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .event-controls-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .event-controls-row label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .date-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.78rem;
+      padding: 0.3rem 0.5rem;
+      color-scheme: dark;
+    }
+
+    .cameras-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .cameras-filter-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .cam-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.78rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .cam-checkbox-label input[type="checkbox"] {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .event-status {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      min-height: 1.2em;
+    }
+
+    .event-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+
+    .event-item {
+      display: grid;
+      grid-template-columns: minmax(8rem, 12rem) 1fr 3.5rem 5rem auto;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.4rem 0.6rem;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid transparent;
+      border-radius: 4px;
+    }
+
+    .event-item.active {
+      background: rgba(79,156,249,0.08);
+      border-color: rgba(79,156,249,0.25);
+    }
+
+    .event-cam {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .event-time {
+      font-size: 0.82rem;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .event-duration, .event-size {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .event-play-btn {
+      padding: 0.25rem 0.65rem;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .event-play-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .event-play-btn:disabled { opacity: 0.4; cursor: default; }
+    .event-play-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(79,156,249,0.1); }
+
+    #event-video {
+      width: 100%;
+      border-radius: 4px;
+      background: #000;
+      max-height: 45vh;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -234,6 +407,37 @@
       <div class="card-header"><h2>Hub Capabilities</h2></div>
       <div class="card-body">
         <pre id="ability-pre"><span class="loading-text">Loading&hellip;</span></pre>
+      </div>
+    </div>
+
+    <div class="card" id="events-card">
+      <div class="card-header"><h2>Event History</h2></div>
+      <div class="card-body">
+
+        <!-- Inline video player — hidden until first Play is clicked -->
+        <div id="event-player" style="display:none; margin-bottom:0.75rem;">
+          <div id="event-player-loading" class="playback-loading" style="display:none;">
+            <span class="loading-spinner"></span>Loading recording&hellip;
+          </div>
+          <video id="event-video" controls></video>
+        </div>
+
+        <!-- Search controls -->
+        <div class="event-controls">
+          <div class="event-controls-row">
+            <label for="event-start">From</label>
+            <input type="date" id="event-start" class="date-input">
+            <label for="event-end">To</label>
+            <input type="date" id="event-end" class="date-input">
+            <button id="event-search-btn" class="search-btn">Search</button>
+          </div>
+          <div class="cameras-filter-row" id="cameras-filter-row">
+            <!-- populated from /api/devices after page load -->
+          </div>
+        </div>
+
+        <p id="event-status" class="event-status"></p>
+        <div id="event-list" class="event-list"></div>
       </div>
     </div>
   </div>

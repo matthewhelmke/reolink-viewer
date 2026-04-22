@@ -11,7 +11,7 @@ import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
 import {
   parseCookies, signSession, verifySession,
-  safeCompare, toReolinkTime, hasFiles, sendError,
+  safeCompare, toReolinkTime, hasFiles, sendError, parseDateLocal,
 } from './utils.js';
 import { createApp } from './app.js';
 
@@ -542,5 +542,318 @@ describe('GET /api/admin/ability', () => {
       .get('/api/admin/ability')
       .set('Cookie', authCookie('admin'));
     expect(res.status).toBe(502);
+  });
+});
+
+// ── parseDateLocal ────────────────────────────────────────────────────────────
+
+describe('parseDateLocal', () => {
+  it('parses YYYY-MM-DD as a local-time midnight Date', () => {
+    const d = parseDateLocal('2026-04-20');
+    expect(d?.getFullYear()).toBe(2026);
+    expect(d?.getMonth()).toBe(3); // April = month index 3
+    expect(d?.getDate()).toBe(20);
+    expect(d?.getHours()).toBe(0);
+  });
+
+  it('returns null for strings not matching YYYY-MM-DD format', () => {
+    expect(parseDateLocal('not-a-date')).toBeNull();
+    expect(parseDateLocal('20260420')).toBeNull();
+    expect(parseDateLocal('2026-04-20T10:00:00')).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    expect(parseDateLocal('')).toBeNull();
+  });
+});
+
+// ── GET /api/admin/events ─────────────────────────────────────────────────────
+
+describe('GET /api/admin/events', () => {
+  const validQuery = 'start=2026-04-20&end=2026-04-20';
+
+  const twoNamedChannels = {
+    count: 2,
+    status: [
+      { channel: 0, name: 'Back door', online: 1, sleep: 0 },
+      { channel: 1, name: 'Garage',    online: 1, sleep: 0 },
+    ],
+  };
+
+  const emptySearch = { SearchResult: { File: [], Status: [] } };
+
+  function fileAt(name: string, hour: number, channel = 0, size = '5242880') {
+    return { name, size, StartTime: { year: 2026, mon: 4, day: 20, hour, min: 0, sec: 0 }, EndTime: { year: 2026, mon: 4, day: 20, hour, min: 1, sec: 0 }, channel };
+  }
+
+  it('returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 401 for unauthenticated requests', async () => {
+    const res = await request(app).get(`/api/admin/events?${validQuery}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when start param is missing', async () => {
+    const res = await request(app)
+      .get('/api/admin/events?end=2026-04-20')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/start and end/i);
+  });
+
+  it('returns 400 for invalid date strings', async () => {
+    const res = await request(app)
+      .get('/api/admin/events?start=not-a-date&end=2026-04-20')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/YYYY-MM-DD/i);
+  });
+
+  it('searches all named channels and skips unnamed channel slots', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 3,
+      status: [
+        { channel: 0, name: 'Back door', online: 1, sleep: 0 },
+        { channel: 1, name: 'Garage',    online: 1, sleep: 0 },
+        { channel: 2, name: '',          online: 0, sleep: 0 },
+      ],
+    });
+    mockClient.api.mockResolvedValue(emptySearch);
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(mockClient.api).toHaveBeenCalledWith('GetChannelstatus');
+    expect(mockClient.api).toHaveBeenCalledWith('Search', expect.objectContaining({
+      Search: expect.objectContaining({ channel: 0, iLogicChannel: 0 }),
+    }));
+    expect(mockClient.api).toHaveBeenCalledWith('Search', expect.objectContaining({
+      Search: expect.objectContaining({ channel: 1, iLogicChannel: 0 }),
+    }));
+    expect(mockClient.api).not.toHaveBeenCalledWith('Search', expect.objectContaining({
+      Search: expect.objectContaining({ channel: 2 }),
+    }));
+  });
+
+  it('returns events sorted by StartTime descending', async () => {
+    // Both files land in the 08:00–11:59 window (hour 9 and 11).
+    // mockImplementation returns data only when the search window starts at hour 8,
+    // and emptySearch for follow-up pagination calls (which start at hour 9 or 11).
+    mockClient.api.mockImplementation((cmd: string, params: unknown) => {
+      if (cmd === 'GetChannelstatus') return Promise.resolve(twoNamedChannels);
+      if (cmd !== 'Search') return Promise.resolve({});
+      const { channel, StartTime } =
+        (params as { Search: { channel: number; StartTime: { hour: number } } }).Search;
+      if (channel === 0 && StartTime.hour === 8)
+        return Promise.resolve({ SearchResult: { File: [fileAt('early.mp4', 9)], Status: [] } });
+      if (channel === 1 && StartTime.hour === 8)
+        return Promise.resolve({ SearchResult: { File: [fileAt('late.mp4', 11)], Status: [] } });
+      return Promise.resolve(emptySearch);
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events[0].name).toBe('late.mp4');
+    expect(res.body.events[1].name).toBe('early.mp4');
+  });
+
+  it('deduplicates recordings that the hub returns in more than one time window', async () => {
+    // Simulate the hub returning the same file for two consecutive Search calls —
+    // the deduplication-by-name guard should suppress the second occurrence.
+    let searchCallCount = 0;
+    mockClient.api.mockImplementation((cmd: string) => {
+      if (cmd === 'GetChannelstatus') return Promise.resolve({
+        count: 1,
+        status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+      });
+      if (cmd === 'Search') {
+        searchCallCount++;
+        if (searchCallCount <= 2)
+          return Promise.resolve({ SearchResult: { File: [fileAt('dup.mp4', 3)], Status: [] } });
+        return Promise.resolve(emptySearch);
+      }
+      return Promise.resolve({});
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('dup.mp4');
+  });
+
+  it('enriches each event with channel number and channelName', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+    });
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: { File: [fileAt('clip.mp4', 10)], Status: [] },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events[0]).toMatchObject({ channel: 0, channelName: 'Back door', name: 'clip.mp4' });
+  });
+
+  it('restricts search to specified channels when channels param is provided', async () => {
+    mockClient.api.mockResolvedValueOnce(twoNamedChannels);
+    mockClient.api.mockResolvedValue(emptySearch);
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}&channels=1`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(mockClient.api).not.toHaveBeenCalledWith('Search', expect.objectContaining({
+      Search: expect.objectContaining({ channel: 0 }),
+    }));
+    expect(mockClient.api).toHaveBeenCalledWith('Search', expect.objectContaining({
+      Search: expect.objectContaining({ channel: 1 }),
+    }));
+  });
+
+  it('filters events by type when types param is provided', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+    });
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: {
+        File: [
+          { ...fileAt('motion.mp4', 10), type: 'sub'  },
+          { ...fileAt('timer.mp4',  11), type: 'main' },
+        ],
+        Status: [],
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}&types=sub`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('motion.mp4');
+  });
+
+  it('excludes zero-size recordings from results', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+    });
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: {
+        File: [fileAt('valid.mp4', 10, 0, '5242880'), fileAt('phantom.mp4', 11, 0, '0')],
+        Status: [],
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('valid.mp4');
+  });
+
+  it('excludes recordings shorter than 30 seconds', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+    });
+    // short: 13s duration; long: 46s duration
+    const shortFile = { name: 'short.mp4', size: '1572864',
+      StartTime: { year: 2026, mon: 4, day: 20, hour: 15, min: 15, sec: 15 },
+      EndTime:   { year: 2026, mon: 4, day: 20, hour: 15, min: 15, sec: 28 } };
+    const longFile  = { name: 'long.mp4',  size: '9437184',
+      StartTime: { year: 2026, mon: 4, day: 20, hour: 10, min: 0, sec: 0 },
+      EndTime:   { year: 2026, mon: 4, day: 20, hour: 10, min: 0, sec: 46 } };
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: { File: [shortFile, longFile], Status: [] },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('long.mp4');
+  });
+
+  it('keeps recordings with missing EndTime (hub may not have written it yet)', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Garage', online: 1, sleep: 0 }],
+    });
+    const noEndTime = { name: 'recent.mp4', size: '4194304',
+      StartTime: { year: 2026, mon: 4, day: 20, hour: 15, min: 15, sec: 5 } };
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: { File: [noEndTime], Status: [] },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('recent.mp4');
+  });
+
+  it('returns an empty events array when no files are found', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 1,
+      status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+    });
+    mockClient.api.mockResolvedValueOnce(emptySearch);
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toEqual([]);
+  });
+
+  it('returns results from healthy channels when one channel search fails', async () => {
+    mockClient.api.mockResolvedValueOnce(twoNamedChannels);
+    mockClient.api.mockRejectedValueOnce(new Error('timeout'));
+    mockClient.api.mockResolvedValueOnce({
+      SearchResult: { File: [fileAt('ok.mp4', 10, 1)], Status: [] },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('ok.mp4');
+  });
+
+  it('returns 503 when GetChannelstatus itself fails', async () => {
+    mockClient.api.mockRejectedValueOnce(new Error('hub unreachable'));
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(503);
   });
 });

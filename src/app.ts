@@ -9,7 +9,35 @@ import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
-import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError } from './utils.js';
+import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal } from './utils.js';
+
+// Divide [start, end] into non-overlapping slices of WINDOW_HOURS each. Searching
+// one slice at a time keeps each hub call well under its undocumented per-call
+// result limit (~9 results), which otherwise causes recordings near the page boundary
+// to be silently dropped.
+const EVENT_WINDOW_HOURS = 4;
+
+function timeWindows(start: Date, end: Date): Array<[Date, Date]> {
+  const windowMs = EVENT_WINDOW_HOURS * 60 * 60 * 1000;
+  const windows: Array<[Date, Date]> = [];
+  let cursor = start.getTime();
+  const endMs  = end.getTime();
+  while (cursor <= endMs) {
+    const winEnd = Math.min(cursor + windowMs - 1000, endMs);
+    windows.push([new Date(cursor), new Date(winEnd)]);
+    cursor = winEnd + 1000;
+  }
+  return windows;
+}
+
+function reolinkTimeToMs(t: unknown): number {
+  if (!t || typeof t !== 'object') return 0;
+  const rt = t as { year?: number; mon?: number; day?: number; hour?: number; min?: number; sec?: number };
+  return new Date(
+    rt.year ?? 0, (rt.mon ?? 1) - 1, rt.day ?? 1,
+    rt.hour ?? 0, rt.min ?? 0, rt.sec ?? 0
+  ).getTime();
+}
 
 export interface AppConfig {
   sessionSecret:  string;
@@ -436,6 +464,120 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
       if (error instanceof ReolinkHttpError) {
         console.error(`[admin/ability] rspCode=${error.rspCode} detail=${error.detail}`);
       }
+      sendError(res, error);
+    }
+  });
+
+  // Cross-camera event history: searches all named channels in parallel and returns
+  // a merged, reverse-chronological list. Accepts optional channel and type filters.
+  app.get('/api/admin/events', requireAdmin, async (req, res) => {
+    const { start, end, channels: channelsParam, types: typesParam } = req.query;
+
+    if (typeof start !== 'string' || typeof end !== 'string') {
+      res.status(400).json({ error: 'start and end query parameters are required (YYYY-MM-DD)' });
+      return;
+    }
+
+    const startDate = parseDateLocal(start);
+    const endDate   = parseDateLocal(end);
+    if (!startDate || !endDate) {
+      res.status(400).json({ error: 'start and end must be valid dates (YYYY-MM-DD)' });
+      return;
+    }
+    endDate.setHours(23, 59, 59, 0);
+
+    const requestedChannels = typeof channelsParam === 'string'
+      ? channelsParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+      : null;
+
+    const requestedTypes = typeof typesParam === 'string'
+      ? typesParam.split(',').map(s => s.trim()).filter(Boolean)
+      : null;
+
+    try {
+      const devicesResult = await withRelogin(() => client.api('GetChannelstatus')) as {
+        status?: Array<{ channel: number; name: string }>;
+      };
+      const namedDevices = (devicesResult?.status ?? []).filter(d => d.name);
+      const targetDevices = requestedChannels
+        ? namedDevices.filter(d => requestedChannels.includes(d.channel))
+        : namedDevices;
+
+      type SearchFile = Record<string, unknown>;
+
+      // The hub rejects concurrent Search calls with error -17 "rcv failed".
+      // Sequential iteration avoids this; per-channel errors are caught individually.
+      // Each channel is searched in 4-hour windows to stay under the hub's per-call
+      // result limit (~9 results). Without windows, a recording whose StartTime falls
+      // inside an already-returned batch can be silently dropped by forward pagination.
+      // Results are deduplicated by name in case a recording straddles a window boundary.
+      const windows = timeWindows(startDate, endDate);
+      console.log(`[admin/events] searching ${targetDevices.length} channel(s) over ${windows.length} windows (${start}→${end})`);
+
+      const events: Array<Record<string, unknown>> = [];
+      for (const device of targetDevices) {
+        try {
+          const seenNames = new Set<string>();
+          for (const [winStart, winEnd] of windows) {
+            let pageStart = new Date(winStart.getTime());
+            for (let page = 0; page < 20; page++) {
+              const result = await withRelogin(() =>
+                client.api('Search', {
+                  Search: {
+                    channel:       device.channel,
+                    iLogicChannel: 0,
+                    onlyStatus:    0,
+                    streamType:    'main',
+                    StartTime:     toReolinkTime(pageStart),
+                    EndTime:       toReolinkTime(winEnd),
+                  },
+                })
+              ) as { SearchResult?: { File?: SearchFile[] } };
+              const batch = result?.SearchResult?.File ?? [];
+              if (batch.length === 0) break;
+
+              for (const f of batch) {
+                const name = String(f['name'] ?? '');
+                if (name && !seenNames.has(name)) {
+                  seenNames.add(name);
+                  events.push({ ...f, channel: device.channel, channelName: device.name });
+                }
+              }
+
+              // Advance past the last result's EndTime for the next page within this window.
+              const lastEnd = (batch[batch.length - 1] as Record<string, unknown>)['EndTime'] as
+                { year?: number; mon?: number; day?: number; hour?: number; min?: number; sec?: number } | undefined;
+              if (!lastEnd?.year) break;
+              pageStart = new Date(
+                lastEnd.year, (lastEnd.mon ?? 1) - 1, lastEnd.day ?? 1,
+                lastEnd.hour ?? 0, lastEnd.min ?? 0, (lastEnd.sec ?? 0) + 1,
+              );
+              if (pageStart > winEnd) break;
+            }
+          }
+        } catch (err) {
+          console.error(`[admin/events] ch${device.channel} search aborted:`,
+            err instanceof Error ? err.message : err);
+        }
+      }
+      console.log(`[admin/events] ${events.length} recording(s) found across all channels`);
+
+      const MIN_DURATION_MS = 30_000;
+      const playable = events.filter(e => {
+        if (parseInt(String(e['size'] ?? '0'), 10) <= 0) return false;
+        const dur = reolinkTimeToMs(e['EndTime']) - reolinkTimeToMs(e['StartTime']);
+        // dur <= 0 means EndTime is missing or not yet written by the hub (recent recording).
+        // Keep it — size > 0 is sufficient evidence it's real.
+        return dur <= 0 || dur >= MIN_DURATION_MS;
+      });
+      const filtered = requestedTypes
+        ? playable.filter(e => requestedTypes.includes(String(e['type'] ?? '')))
+        : playable;
+
+      filtered.sort((a, b) => reolinkTimeToMs(b['StartTime']) - reolinkTimeToMs(a['StartTime']));
+
+      res.json({ events: filtered });
+    } catch (error) {
       sendError(res, error);
     }
   });
