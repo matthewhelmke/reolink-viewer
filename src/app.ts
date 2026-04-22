@@ -11,6 +11,25 @@ import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
 import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal } from './utils.js';
 
+// Divide [start, end] into non-overlapping slices of WINDOW_HOURS each. Searching
+// one slice at a time keeps each hub call well under its undocumented per-call
+// result limit (~9 results), which otherwise causes recordings near the page boundary
+// to be silently dropped.
+const EVENT_WINDOW_HOURS = 4;
+
+function timeWindows(start: Date, end: Date): Array<[Date, Date]> {
+  const windowMs = EVENT_WINDOW_HOURS * 60 * 60 * 1000;
+  const windows: Array<[Date, Date]> = [];
+  let cursor = start.getTime();
+  const endMs  = end.getTime();
+  while (cursor <= endMs) {
+    const winEnd = Math.min(cursor + windowMs - 1000, endMs);
+    windows.push([new Date(cursor), new Date(winEnd)]);
+    cursor = winEnd + 1000;
+  }
+  return windows;
+}
+
 function reolinkTimeToMs(t: unknown): number {
   if (!t || typeof t !== 'object') return 0;
   const rt = t as { year?: number; mon?: number; day?: number; hour?: number; min?: number; sec?: number };
@@ -488,51 +507,61 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
 
       // The hub rejects concurrent Search calls with error -17 "rcv failed".
       // Sequential iteration avoids this; per-channel errors are caught individually.
-      // Each channel is paginated: the hub returns results oldest-first with a per-call
-      // limit, so we advance StartTime past the last result's EndTime until we get an
-      // empty batch.
+      // Each channel is searched in 4-hour windows to stay under the hub's per-call
+      // result limit (~9 results). Without windows, a recording whose StartTime falls
+      // inside an already-returned batch can be silently dropped by forward pagination.
+      // Results are deduplicated by name in case a recording straddles a window boundary.
+      const windows = timeWindows(startDate, endDate);
+      console.log(`[admin/events] searching ${targetDevices.length} channel(s) over ${windows.length} windows (${start}→${end})`);
+
       const events: Array<Record<string, unknown>> = [];
       for (const device of targetDevices) {
         try {
-          let pageStart = new Date(startDate.getTime());
-          for (let page = 0; page < 20; page++) {
-            const result = await withRelogin(() =>
-              client.api('Search', {
-                Search: {
-                  channel:       device.channel,
-                  iLogicChannel: 0,
-                  onlyStatus:    0,
-                  streamType:    'main',
-                  StartTime:     toReolinkTime(pageStart),
-                  EndTime:       toReolinkTime(endDate),
-                },
-              })
-            );
-            const r = result as { SearchResult?: { File?: SearchFile[] } };
-            const batch = r?.SearchResult?.File ?? [];
-            if (batch.length === 0) break;
+          const seenNames = new Set<string>();
+          for (const [winStart, winEnd] of windows) {
+            let pageStart = new Date(winStart.getTime());
+            for (let page = 0; page < 20; page++) {
+              const result = await withRelogin(() =>
+                client.api('Search', {
+                  Search: {
+                    channel:       device.channel,
+                    iLogicChannel: 0,
+                    onlyStatus:    0,
+                    streamType:    'main',
+                    StartTime:     toReolinkTime(pageStart),
+                    EndTime:       toReolinkTime(winEnd),
+                  },
+                })
+              ) as { SearchResult?: { File?: SearchFile[] } };
+              const batch = result?.SearchResult?.File ?? [];
+              if (batch.length === 0) break;
 
-            events.push(...batch.map(f => ({
-              ...f,
-              channel:     device.channel,
-              channelName: device.name,
-            })));
+              for (const f of batch) {
+                const name = String(f['name'] ?? '');
+                if (name && !seenNames.has(name)) {
+                  seenNames.add(name);
+                  events.push({ ...f, channel: device.channel, channelName: device.name });
+                }
+              }
 
-            // Advance past the last result's EndTime for the next page.
-            const lastEnd = (batch[batch.length - 1] as Record<string, unknown>)['EndTime'] as
-              { year?: number; mon?: number; day?: number; hour?: number; min?: number; sec?: number } | undefined;
-            if (!lastEnd?.year) break;
-            pageStart = new Date(
-              lastEnd.year, (lastEnd.mon ?? 1) - 1, lastEnd.day ?? 1,
-              lastEnd.hour ?? 0, lastEnd.min ?? 0, (lastEnd.sec ?? 0) + 1,
-            );
-            if (pageStart > endDate) break;
+              // Advance past the last result's EndTime for the next page within this window.
+              const lastEnd = (batch[batch.length - 1] as Record<string, unknown>)['EndTime'] as
+                { year?: number; mon?: number; day?: number; hour?: number; min?: number; sec?: number } | undefined;
+              if (!lastEnd?.year) break;
+              pageStart = new Date(
+                lastEnd.year, (lastEnd.mon ?? 1) - 1, lastEnd.day ?? 1,
+                lastEnd.hour ?? 0, lastEnd.min ?? 0, (lastEnd.sec ?? 0) + 1,
+              );
+              if (pageStart > winEnd) break;
+            }
           }
         } catch (err) {
-          console.error('[admin/events] search failed for a channel:',
+          console.error(`[admin/events] ch${device.channel} search aborted:`,
             err instanceof Error ? err.message : err);
         }
       }
+      console.log(`[admin/events] ${events.length} recording(s) found across all channels`);
+
       const MIN_DURATION_MS = 30_000;
       const playable = events.filter(e => {
         if (parseInt(String(e['size'] ?? '0'), 10) <= 0) return false;

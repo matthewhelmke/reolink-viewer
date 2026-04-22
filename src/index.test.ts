@@ -643,13 +643,19 @@ describe('GET /api/admin/events', () => {
   });
 
   it('returns events sorted by StartTime descending', async () => {
-    mockClient.api.mockResolvedValueOnce(twoNamedChannels);
-    mockClient.api.mockResolvedValueOnce({
-      SearchResult: { File: [fileAt('early.mp4', 9)], Status: [] },
-    });
-    mockClient.api.mockResolvedValueOnce(emptySearch); // terminate ch0 pagination
-    mockClient.api.mockResolvedValueOnce({
-      SearchResult: { File: [fileAt('late.mp4', 11)], Status: [] },
+    // Both files land in the 08:00–11:59 window (hour 9 and 11).
+    // mockImplementation returns data only when the search window starts at hour 8,
+    // and emptySearch for follow-up pagination calls (which start at hour 9 or 11).
+    mockClient.api.mockImplementation((cmd: string, params: unknown) => {
+      if (cmd === 'GetChannelstatus') return Promise.resolve(twoNamedChannels);
+      if (cmd !== 'Search') return Promise.resolve({});
+      const { channel, StartTime } =
+        (params as { Search: { channel: number; StartTime: { hour: number } } }).Search;
+      if (channel === 0 && StartTime.hour === 8)
+        return Promise.resolve({ SearchResult: { File: [fileAt('early.mp4', 9)], Status: [] } });
+      if (channel === 1 && StartTime.hour === 8)
+        return Promise.resolve({ SearchResult: { File: [fileAt('late.mp4', 11)], Status: [] } });
+      return Promise.resolve(emptySearch);
     });
 
     const res = await request(app)
@@ -659,6 +665,33 @@ describe('GET /api/admin/events', () => {
     expect(res.status).toBe(200);
     expect(res.body.events[0].name).toBe('late.mp4');
     expect(res.body.events[1].name).toBe('early.mp4');
+  });
+
+  it('deduplicates recordings that the hub returns in more than one time window', async () => {
+    // Simulate the hub returning the same file for two consecutive Search calls —
+    // the deduplication-by-name guard should suppress the second occurrence.
+    let searchCallCount = 0;
+    mockClient.api.mockImplementation((cmd: string) => {
+      if (cmd === 'GetChannelstatus') return Promise.resolve({
+        count: 1,
+        status: [{ channel: 0, name: 'Back door', online: 1, sleep: 0 }],
+      });
+      if (cmd === 'Search') {
+        searchCallCount++;
+        if (searchCallCount <= 2)
+          return Promise.resolve({ SearchResult: { File: [fileAt('dup.mp4', 3)], Status: [] } });
+        return Promise.resolve(emptySearch);
+      }
+      return Promise.resolve({});
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/events?${validQuery}`)
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].name).toBe('dup.mp4');
   });
 
   it('enriches each event with channel number and channelName', async () => {
