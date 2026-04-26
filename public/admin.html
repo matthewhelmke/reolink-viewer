@@ -192,16 +192,50 @@
     .cam-ch   { color: var(--text-muted); font-size: 0.75rem; }
     .cam-model { color: var(--text-muted); font-size: 0.75rem; }
 
-    /* Capability JSON */
-    #ability-pre {
-      font-size: 0.74rem;
-      color: var(--text);
-      white-space: pre-wrap;
-      word-break: break-all;
-      line-height: 1.55;
-      max-height: 55vh;
-      overflow-y: auto;
+    /* AI config per-camera block */
+    .ai-config-camera {
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.75rem;
     }
+    .ai-config-camera:last-child { padding-bottom: 0; border-bottom: none; margin-bottom: 0; }
+
+    .ai-detect-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
+
+    .ai-detect-badge {
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      border: 1px solid;
+      cursor: pointer;
+      font-family: inherit;
+      transition: filter 0.12s;
+    }
+    .ai-detect-badge.on  { background: rgba(72,187,120,0.12); border-color: rgba(72,187,120,0.35); color: #68d391; }
+    .ai-detect-badge.off { background: rgba(0,0,0,0.15);      border-color: var(--border);          color: var(--text-muted); }
+    .ai-detect-badge:hover:not(:disabled) { filter: brightness(1.18); }
+    .ai-detect-badge:disabled { opacity: 0.45; cursor: default; }
+
+    .ai-track-row { font-size: 0.78rem; color: var(--text-muted); }
+
+    .ai-track-toggle {
+      padding: 0.08rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid;
+      cursor: pointer;
+      font-family: inherit;
+      transition: filter 0.12s;
+    }
+    .ai-track-toggle.on  { background: rgba(72,187,120,0.12); border-color: rgba(72,187,120,0.35); color: #68d391; }
+    .ai-track-toggle.off { background: rgba(0,0,0,0.15); border-color: var(--border); color: var(--text-muted); }
+    .ai-track-toggle:hover:not(:disabled) { filter: brightness(1.18); }
+    .ai-track-toggle:disabled { opacity: 0.45; cursor: default; }
+
+    .ai-track-detail { margin-left: 0.3rem; }
+    .ai-save-error { font-size: 0.74rem; color: var(--danger); margin-top: 0.3rem; }
 
     /* ── Shared: search button ── */
     .search-btn {
@@ -403,10 +437,10 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header"><h2>Hub Capabilities</h2></div>
+    <div class="card" id="ai-config-card">
+      <div class="card-header"><h2>AI Detection Config</h2></div>
       <div class="card-body">
-        <pre id="ability-pre"><span class="loading-text">Loading&hellip;</span></pre>
+        <div id="ai-config-list"><span class="loading-text">Loading&hellip;</span></div>
       </div>
     </div>
 

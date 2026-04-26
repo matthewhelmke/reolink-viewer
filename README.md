@@ -34,20 +34,26 @@ I can do everything this app does using the official Android app from Reolink, s
 
 - A separate `/admin` page, accessible only to the `admin` role
 - An **Admin** link appears in the viewer sidebar for admin sessions
-- The admin page displays hub info, connected camera list, and a raw dump of the hub's `GetAbility` response (useful for feature discovery)
+- The admin page displays hub info and connected camera list
 - `requireAdmin` middleware gates all `/api/admin/*` routes and the `/admin` page — viewer-role sessions receive 403 on API routes and are redirected to `/` on page routes
 - **Cross-camera event history** — date-range search across all named channels, merged and sorted newest-first, with an inline video player; filters out phantom and very short recordings automatically
+- **AI detection config** — per-camera toggle of AI detection types (People, Vehicle, Animal, Package, Face) and auto-track, saved immediately to the hub via `SetAiCfg`
+
+> **Auto-track note:** The auto-track toggle causes a PTZ camera to physically follow detected subjects (pan/tilt to keep them in frame) and return to its home position after they stop or leave. It only has any effect on cameras with motors — enabling it on a fixed-mount camera is accepted by the hub but does nothing. The `trackType` settings (which subjects to follow) and return-home timers are shown but not yet editable here; use the Reolink app to change them.
 
 What is planned but not yet built:
-- **PTZ control** — only if `GetAbility` confirms a connected camera supports it
-- **Encoding and AI config** — read-only view of `GetEnc` and `GetAiCfg` per channel, write ops later
+- **Encoding config** — read-only view of `GetEnc` per channel, write ops later
+- **PTZ control** — only if a connected camera supports it (current cameras are fixed-mount)
 
 Note: this app uses the [Reolink native HTTPS API](https://github.com/verheesj/reolink-api) exclusively. ONVIF is not used and has been disabled on the hub.
 
 ### Next steps
 
-- **Dynamic camera discovery** — add/remove camera cards without a page reload
-- **Admin mode** — PTZ control (if supported by connected cameras) and encoding/AI config views
+- **Admin mode** — encoding config view
+
+### Possible future development
+
+- **Dynamic camera discovery** — currently, adding a camera to the hub requires a page reload for it to appear in the viewer; auto-detection without a reload would require polling or a push mechanism
 
 
 ### A note on live video quality

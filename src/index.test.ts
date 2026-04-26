@@ -567,6 +567,170 @@ describe('parseDateLocal', () => {
   });
 });
 
+// ── GET /api/admin/ai-config ──────────────────────────────────────────────────
+
+describe('GET /api/admin/ai-config', () => {
+  const namedChannels = {
+    count: 2,
+    status: [
+      { channel: 0, name: 'Back door', online: 1, sleep: 0 },
+      { channel: 1, name: 'Garage',    online: 1, sleep: 0 },
+    ],
+  };
+
+  it('returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .get('/api/admin/ai-config')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 401 for unauthenticated requests', async () => {
+    const res = await request(app).get('/api/admin/ai-config');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns AI config for all named channels', async () => {
+    const aiCfg0 = { AiDetection: { channel: 0, people: 1, vehicle: 1, dog_cat: 0, package: 1 } };
+    const aiCfg1 = { AiDetection: { channel: 1, people: 1, vehicle: 0, dog_cat: 1, package: 0 } };
+    mockClient.api
+      .mockResolvedValueOnce(namedChannels)
+      .mockResolvedValueOnce(aiCfg0)
+      .mockResolvedValueOnce(aiCfg1);
+
+    const res = await request(app)
+      .get('/api/admin/ai-config')
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.configs).toHaveLength(2);
+    expect(res.body.configs[0]).toMatchObject({ channel: 0, channelName: 'Back door', config: aiCfg0 });
+    expect(res.body.configs[1]).toMatchObject({ channel: 1, channelName: 'Garage',    config: aiCfg1 });
+    expect(mockClient.api).toHaveBeenCalledWith('GetAiCfg', { channel: 0 });
+    expect(mockClient.api).toHaveBeenCalledWith('GetAiCfg', { channel: 1 });
+  });
+
+  it('returns null config for a failing channel and continues with the rest', async () => {
+    const aiCfg1 = { AiDetection: { channel: 1, people: 1 } };
+    mockClient.api
+      .mockResolvedValueOnce(namedChannels)
+      .mockRejectedValueOnce(new Error('ch0 failed'))
+      .mockResolvedValueOnce(aiCfg1);
+
+    const res = await request(app)
+      .get('/api/admin/ai-config')
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.configs).toHaveLength(2);
+    expect(res.body.configs[0]).toMatchObject({ channel: 0, config: null });
+    expect(res.body.configs[1]).toMatchObject({ channel: 1, config: aiCfg1 });
+  });
+
+  it('skips unnamed channel slots', async () => {
+    mockClient.api.mockResolvedValueOnce({
+      count: 3,
+      status: [
+        { channel: 0, name: 'Back door', online: 1, sleep: 0 },
+        { channel: 1, name: '',          online: 0, sleep: 0 },
+        { channel: 2, name: 'Garage',    online: 1, sleep: 0 },
+      ],
+    });
+    mockClient.api
+      .mockResolvedValueOnce({ AiDetection: { channel: 0 } })
+      .mockResolvedValueOnce({ AiDetection: { channel: 2 } });
+
+    const res = await request(app)
+      .get('/api/admin/ai-config')
+      .set('Cookie', authCookie('admin'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.configs).toHaveLength(2);
+    expect(mockClient.api).not.toHaveBeenCalledWith('GetAiCfg', { channel: 1 });
+  });
+
+  it('returns 503 when GetChannelstatus fails', async () => {
+    mockClient.api.mockRejectedValueOnce(new Error('hub unreachable'));
+    const res = await request(app)
+      .get('/api/admin/ai-config')
+      .set('Cookie', authCookie('admin'));
+    expect(res.status).toBe(503);
+  });
+});
+
+// ── POST /api/admin/ai-config/:channel ───────────────────────────────────────
+
+describe('POST /api/admin/ai-config/:channel', () => {
+  const validBody = {
+    AiDetectType: { people: 1, vehicle: 1, dog_cat: 0, face: 0, package: 0 },
+    aiTrack: 0,
+    bSmartTrack: 0,
+    trackTask: '',
+    trackType: { people: 1, vehicle: 0, dog_cat: 0, face: 0, package: 0 },
+  };
+
+  it('returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .set('Cookie', authCookie('viewer'))
+      .send(validBody);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 401 for unauthenticated requests', async () => {
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .send(validBody);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 for a non-numeric channel', async () => {
+    const res = await request(app)
+      .post('/api/admin/ai-config/abc')
+      .set('Cookie', authCookie('admin'))
+      .send(validBody);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when the body is an array instead of an object', async () => {
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .set('Cookie', authCookie('admin'))
+      .send([validBody]);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/JSON object/i);
+  });
+
+  it('calls SetAiCfg with the channel from the URL, overriding any channel in the body', async () => {
+    mockClient.api.mockResolvedValueOnce({ rspCode: 200 });
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .set('Cookie', authCookie('admin'))
+      .send({ ...validBody, channel: 99 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, rspCode: 200 });
+    expect(mockClient.api).toHaveBeenCalledWith('SetAiCfg', expect.objectContaining({ channel: 0 }));
+  });
+
+  it('returns 503 when the hub is unreachable', async () => {
+    mockClient.api.mockRejectedValueOnce(new Error('timeout'));
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .set('Cookie', authCookie('admin'))
+      .send(validBody);
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 502 for a hub API error', async () => {
+    mockClient.api.mockRejectedValueOnce(new ReolinkHttpError(200, -9, 'Not supported'));
+    const res = await request(app)
+      .post('/api/admin/ai-config/0')
+      .set('Cookie', authCookie('admin'))
+      .send(validBody);
+    expect(res.status).toBe(502);
+  });
+});
+
 // ── GET /api/admin/events ─────────────────────────────────────────────────────
 
 describe('GET /api/admin/events', () => {
