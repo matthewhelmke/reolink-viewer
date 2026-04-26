@@ -145,8 +145,153 @@ function renderCameraCheckboxes(data) {
   }
 }
 
-function renderAbility(data) {
-  document.getElementById('ability-pre').textContent = JSON.stringify(data, null, 2);
+const DETECT_LABELS = {
+  people:  'People',
+  vehicle: 'Vehicle',
+  dog_cat: 'Animal',
+  package: 'Package',
+  face:    'Face',
+};
+
+// Mutable per-channel config state — updated in place as the user toggles settings.
+const aiConfigs = new Map();
+
+async function saveAiConfig(channel, config) {
+  const res = await fetch(`/api/admin/ai-config/${channel}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+function showAiError(channel, message) {
+  const el = document.getElementById(`ai-error-${channel}`);
+  if (!el) return;
+  el.textContent = message;
+  el.style.display = message ? 'block' : 'none';
+}
+
+async function toggleDetectType(btn) {
+  const channel = parseInt(btn.dataset.channel, 10);
+  const key     = btn.dataset.key;
+  const config  = aiConfigs.get(channel);
+  if (!config) return;
+
+  const wasOn = config.AiDetectType[key] === 1;
+  config.AiDetectType[key] = wasOn ? 0 : 1;
+  btn.classList.toggle('on', !wasOn);
+  btn.classList.toggle('off', wasOn);
+
+  const allBadges = document.querySelectorAll(`.ai-detect-badge[data-channel="${channel}"]`);
+  allBadges.forEach(b => { b.disabled = true; });
+  showAiError(channel, '');
+
+  try {
+    await saveAiConfig(channel, config);
+  } catch (err) {
+    config.AiDetectType[key] = wasOn ? 1 : 0;
+    btn.classList.toggle('on', wasOn);
+    btn.classList.toggle('off', !wasOn);
+    showAiError(channel, `Save failed: ${err.message}`);
+  } finally {
+    allBadges.forEach(b => { b.disabled = false; });
+  }
+}
+
+async function toggleAiTrack(btn) {
+  const channel = parseInt(btn.dataset.channel, 10);
+  const config  = aiConfigs.get(channel);
+  if (!config) return;
+
+  const wasOn = config.aiTrack === 1;
+  config.aiTrack = wasOn ? 0 : 1;
+  btn.classList.toggle('on', !wasOn);
+  btn.classList.toggle('off', wasOn);
+  btn.textContent = wasOn ? 'Off' : 'On';
+
+  const detailEl = document.getElementById(`ai-track-detail-${channel}`);
+  if (detailEl) detailEl.style.display = wasOn ? 'none' : '';
+
+  btn.disabled = true;
+  showAiError(channel, '');
+
+  try {
+    await saveAiConfig(channel, config);
+  } catch (err) {
+    config.aiTrack = wasOn ? 1 : 0;
+    btn.classList.toggle('on', wasOn);
+    btn.classList.toggle('off', !wasOn);
+    btn.textContent = wasOn ? 'On' : 'Off';
+    if (detailEl) detailEl.style.display = wasOn ? '' : 'none';
+    showAiError(channel, `Save failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderAiConfig(configs) {
+  const list = document.getElementById('ai-config-list');
+
+  if (!configs.length) {
+    list.innerHTML = '<span class="loading-text">No cameras found.</span>';
+    return;
+  }
+
+  aiConfigs.clear();
+  for (const { channel, config } of configs) {
+    if (config !== null) aiConfigs.set(channel, JSON.parse(JSON.stringify(config)));
+  }
+
+  list.innerHTML = configs.map(({ channel, channelName, config }) => {
+    if (config === null) {
+      return `<div class="ai-config-camera">
+        <div class="section-label">${channelName}</div>
+        <span class="error-text">Could not load config.</span>
+      </div>`;
+    }
+
+    const detectType = config.AiDetectType ?? {};
+    const badges = Object.entries(DETECT_LABELS)
+      .map(([key, label]) => {
+        const on = detectType[key] === 1;
+        return `<button class="ai-detect-badge ${on ? 'on' : 'off'}" data-channel="${channel}" data-key="${key}">${label}</button>`;
+      })
+      .join('');
+
+    const trackType = config.trackType ?? {};
+    const tracked = Object.entries(DETECT_LABELS)
+      .filter(([key]) => trackType[key] === 1)
+      .map(([, label]) => label)
+      .join(', ');
+    let returnDetail = '';
+    if (config.aiDisappearBackTime != null && config.aiStopBackTime != null) {
+      returnDetail = ` · returns home ${config.aiDisappearBackTime}s after disappear, ${config.aiStopBackTime}s after stop`;
+    }
+    const trackDetail = (tracked ? ` — tracking: ${tracked}` : '') + returnDetail;
+    const aiTrackOn = config.aiTrack === 1;
+    const trackRow = `<div class="ai-track-row">Auto-track:
+      <button class="ai-track-toggle ${aiTrackOn ? 'on' : 'off'}" data-channel="${channel}">${aiTrackOn ? 'On' : 'Off'}</button><span
+        class="ai-track-detail" id="ai-track-detail-${channel}"${aiTrackOn ? '' : ' style="display:none"'}>${trackDetail}</span></div>`;
+
+    return `<div class="ai-config-camera" data-channel="${channel}">
+      <div class="section-label">${channelName}</div>
+      <div class="ai-detect-badges">${badges}</div>
+      ${trackRow}
+      <div class="ai-save-error" id="ai-error-${channel}" style="display:none;"></div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.ai-detect-badge[data-channel]').forEach(btn => {
+    btn.addEventListener('click', () => toggleDetectType(btn));
+  });
+  list.querySelectorAll('.ai-track-toggle[data-channel]').forEach(btn => {
+    btn.addEventListener('click', () => toggleAiTrack(btn));
+  });
 }
 
 function renderError(elementId, message) {
@@ -337,10 +482,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('event-search-btn').addEventListener('click', loadEvents);
 
-  const [infoRes, devicesRes, abilityRes] = await Promise.allSettled([
+  const [infoRes, devicesRes, aiConfigRes] = await Promise.allSettled([
     fetch('/api/device-info'),
     fetch('/api/devices'),
-    fetch('/api/admin/ability'),
+    fetch('/api/admin/ai-config'),
   ]);
 
   if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
@@ -357,14 +502,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderError('cameras-list', 'Could not load camera list.');
   }
 
-  if (abilityRes.status === 'fulfilled' && abilityRes.value.ok) {
-    renderAbility(await abilityRes.value.json());
+  if (aiConfigRes.status === 'fulfilled' && aiConfigRes.value.ok) {
+    const { configs } = await aiConfigRes.value.json();
+    renderAiConfig(configs);
   } else {
-    const msg = abilityRes.status === 'fulfilled'
-      ? `Hub returned ${abilityRes.value.status}`
-      : 'Could not load capabilities.';
-    document.getElementById('ability-pre').innerHTML =
-      `<span class="error-text">${msg}</span>`;
+    renderError('ai-config-list', 'Could not load AI detection config.');
   }
 
   // Auto-search today's events once cameras are loaded and checkboxes are set.

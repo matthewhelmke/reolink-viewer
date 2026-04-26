@@ -468,6 +468,59 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
     }
   });
 
+  // AI detection config: fetches GetAiCfg for each named channel sequentially.
+  // Sequential calls are conservative given the hub's -17 error on concurrent requests.
+  // Returns null config for any channel that fails so the others are still shown.
+  app.get('/api/admin/ai-config', requireAdmin, async (_req, res) => {
+    try {
+      const devicesResult = await withRelogin(() => client.api('GetChannelstatus')) as {
+        status?: Array<{ channel: number; name: string }>;
+      };
+      const namedDevices = (devicesResult?.status ?? []).filter(d => d.name);
+
+      const configs: Array<{ channel: number; channelName: string; config: unknown }> = [];
+      for (const device of namedDevices) {
+        try {
+          const config = await withRelogin(() =>
+            client.api('GetAiCfg', { channel: device.channel })
+          );
+          configs.push({ channel: device.channel, channelName: device.name, config });
+        } catch (err) {
+          console.error(`[admin/ai-config] ch${device.channel}:`, err instanceof Error ? err.message : err);
+          configs.push({ channel: device.channel, channelName: device.name, config: null });
+        }
+      }
+      res.json({ configs });
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // Write AI detection config for one channel. The client sends the complete config
+  // object (all fields from GetAiCfg) with the modified values; the channel in the
+  // URL always wins over any channel field in the body.
+  app.post('/api/admin/ai-config/:channel', requireAdmin, async (req, res) => {
+    const channel = parseInt(req.params['channel']?.toString() ?? '', 10);
+    if (isNaN(channel) || channel < 0) {
+      res.status(400).json({ error: 'Invalid channel' });
+      return;
+    }
+    const body = req.body as unknown;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      res.status(400).json({ error: 'Request body must be a JSON object' });
+      return;
+    }
+    try {
+      const result = await withRelogin(() =>
+        client.api('SetAiCfg', { ...(body as Record<string, unknown>), channel })
+      ) as Record<string, unknown>;
+      res.json({ ok: true, rspCode: result?.['rspCode'] ?? null });
+    } catch (error) {
+      console.error(`[admin/ai-config] ch${channel} write:`, error instanceof Error ? error.message : error);
+      sendError(res, error);
+    }
+  });
+
   // Cross-camera event history: searches all named channels in parallel and returns
   // a merged, reverse-chronological list. Accepts optional channel and type filters.
   app.get('/api/admin/events', requireAdmin, async (req, res) => {
