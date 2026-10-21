@@ -5,3 +5,4 @@ bin/
 NEXT_SESSION.md
 .claude/
 .vscode/
+nvr-cert.pem

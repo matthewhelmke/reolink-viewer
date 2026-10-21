@@ -9,7 +9,7 @@ import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
-import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal } from './utils.js';
+import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal, redactSecret } from './utils.js';
 
 // Divide [start, end] into non-overlapping slices of WINDOW_HOURS each. Searching
 // one slice at a time keeps each hub call well under its undocumented per-call
@@ -48,12 +48,13 @@ export interface AppConfig {
   nvrPass:        string;
   ffmpegBin:      string;
   publicDir:      string;
+  nvrHttpsAgent:  https.Agent;   // trusts only the hub's pinned certificate
 }
 
 export function createApp(client: ReolinkClient, config: AppConfig): express.Application {
   const {
     sessionSecret, viewerPassword, adminPassword,
-    nvrHost, nvrUser, nvrPass, ffmpegBin, publicDir,
+    nvrHost, nvrUser, nvrPass, ffmpegBin, publicDir, nvrHttpsAgent,
   } = config;
 
   // The Hub Pro uses rspCode -6 for "please login first", but the library's built-in
@@ -281,7 +282,7 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
         port: Number(hubUrl.port) || 443,
         path: hubUrl.pathname + hubUrl.search,
         method: 'GET',
-        rejectUnauthorized: false,
+        agent: nvrHttpsAgent,
       },
       (hubRes) => {
         console.log(`[playback ch${channel}] hub status=${hubRes.statusCode} content-type=${hubRes.headers['content-type']} content-length=${hubRes.headers['content-length'] ?? 'unset'}`);
@@ -405,8 +406,9 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
       console.error(`[rtsp ch${channel}] ffmpeg spawn error:`, e.message);
       if (!res.headersSent) res.status(503).json({ error: 'FFmpeg unavailable', detail: e.message });
     });
+    // FFmpeg's errors include the RTSP URL, and so the hub password.
     ffmpeg.stderr.on('data', (data: Buffer) => {
-      console.error(`[rtsp ch${channel}] ffmpeg: ${data.toString().trim()}`);
+      console.error(`[rtsp ch${channel}] ffmpeg: ${redactSecret(data.toString().trim(), nvrPass)}`);
     });
     ffmpeg.stdin?.on('error', () => {});
 

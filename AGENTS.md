@@ -129,7 +129,7 @@ These were discovered during development and are important for any future work:
 - **Session tokens are short-lived** — The Hub Pro frequently invalidates tokens, triggering `withRelogin` even shortly after startup. This is normal behavior for this device.
 - **`GetChannelstatus` response structure** — Returns `{ count: N, status: [...] }`. The device array is under the `status` key, not at the top level. Channels with no assigned device have `name: ""`.
 - **24 channel slots** — The Hub Pro reports all 24 possible channels. Only named channels are real devices (Back door = ch 0, Garage = ch 1, Front door = ch 2 at time of writing). Matthew plans to add more cameras soon.
-- **Self-signed TLS** — The hub uses a self-signed certificate. The client is initialized with `insecure: true`, which routes requests through undici with `rejectUnauthorized: false`.
+- **Self-signed TLS, pinned** — The hub uses a self-signed certificate (subject `CN=CERTIFICATE`, valid 2023–2043). Since 2026-10-21 the app pins it instead of skipping verification: `src/nvr-tls.ts` loads `nvr-cert.pem` and supplies both the `ReolinkClient` (via its `fetch` option, with `insecure: false`) and the playback proxy (via an `https.Agent`). Never reintroduce `insecure: true` or `rejectUnauthorized: false`. Reolink reuses this certificate's subject and serial across devices; whether the private key is also shared is unknown. If it is, pinning stops a generic impostor but not one holding the key.
 - **Hub Pro internal network** — Connected cameras do not appear on the LAN. They connect to the hub's internal network (gateway `172.16.25.1:9000` with DHCP). `GetChannelstatus` is the correct API to enumerate them.
 - **Recording search: `Search` API with wrapped params + `iLogicChannel: 0`** — This is the correct way to list recordings on the Hub Pro. Params must be wrapped under a `Search` key and `iLogicChannel: 0` must be included. See `memory/project_recordings.md` for the full ruled-out table and response shape.
 - **Hub Playback endpoint** — `GET /cgi-bin/api.cgi?cmd=Playback&channel=<ch>&source=<filename>&start=<YYYYMMDDHHmmss>&type=1&seek=<offset>&token=<token>`. The `source` is the literal `name` field from a Search File entry. The `start` is the file's StartTime formatted as `YYYYMMDDHHmmss` in local time.
@@ -139,6 +139,7 @@ These were discovered during development and are important for any future work:
 - **FLV and RTMP streaming are not usable via HTTP** — The Hub Pro's `/flv` endpoint returns an empty response when HTTP (port 80) is enabled. Port 1935 (RTMP) accepts TCP connections but speaks binary RTMP. Neither is consumable by a browser. All live video goes through the `Snap` API over HTTPS.
 - **MJPEG frame rate** — Typically 1–2 fps on LAN, limited by the round-trip time per `Snap` API call. Acceptable for monitoring; not smooth video.
 - **Hub Pro port status (current)** — 443 (HTTPS): always on. 554 (RTSP): on by default, not used. 80 (HTTP): disabled. 1935 (RTMP): disabled. Do not re-enable HTTP or RTMP without a specific reason.
+- **FFmpeg prints the RTSP password** — When an RTSP input fails, FFmpeg's error output includes the full input URL, password and all. The `/api/rtsp` handler passes FFmpeg's stderr through `redactSecret()` before logging it (added 2026-10-21, after the password was found in `docker logs`). Any new FFmpeg call that takes credentials in its URL must do the same.
 - **RTSP is available but unused** — Port 554 is open. FFmpeg could transcode RTSP to HLS server-side for higher-quality live view. Not implemented.
 - **LAN-only constraint** — This app must never be exposed outside the LAN. There is no web app authentication yet.
 - **Thumbnail aspect ratios** — Cameras have very different native resolutions (5120×1440 panoramic vs. near-square). Sidebar thumbnails use `width: 100%; height: auto` — never introduce a fixed-height thumbnail container. See memory for details.
@@ -149,6 +150,7 @@ These are gaps in the current implementation that are documented for future work
 
 - **Dynamic camera discovery** — `loadCameras()` runs only once at page load. If a new camera is added to the hub, it will not appear in the UI until the page is refreshed.
 - **Mid-clip buffering** — Hub streams at 0.87× real-time; browser plays at 1×. For longer clips the browser may briefly outrun the download and pause. Shows "Buffering…" in the status line and resumes automatically.
+- **RTSP password visible in the process list** — FFmpeg receives the RTSP URL, password included, on its command line, so any local user on the host can see it with `ps` while a high-quality stream runs. FFmpeg 7.1 cannot read its input URL from a file (`-/i` is rejected); a fix would need a local RTSP relay. Accepted as low risk on 2026-10-21.
 - **Sidebar thumbnails are static snapshots** — Currently refreshed every 30 seconds. Live MJPEG thumbnails are possible (one-line change) but 30-second refresh scales better as more cameras are added.
 
 ## Completed Tasks
@@ -167,7 +169,9 @@ These are gaps in the current implementation that are documented for future work
 12. **Camera ordering** — ▲▼ buttons per sidebar nav item; order stored in `localStorage` under `reolink-camera-order`; new cameras auto-append to the end of any existing order
 13. **High quality live view** — `GET /api/rtsp/:channel` spawns FFmpeg reading `rtsp://user:pass@host:554/h264Preview_0N_main`, outputs frag MP4 to the browser; Live tab now has Low quality / High quality / Stop buttons
 14. **Web app authentication** — Stateless HMAC-signed cookies (`rv_session`, 1-year Max-Age); `viewer` and `admin` roles determined by which password matches; login page at `/login`; Sign out button in sidebar; `GET /api/me` returns current role; three new required env vars: `VIEWER_PASSWORD`, `ADMIN_PASSWORD`, `SESSION_SECRET`
-15. **Docker Compose deployment** — Multi-stage Dockerfile (`node:20-slim` build stage, `ubuntu:25.04` runtime); FFmpeg 7.1.1 installed via apt; `FFMPEG_PATH` env var added to `src/index.ts` with `bin/ffmpeg` as dev fallback; repository initialized as a git repo and published to GitHub at matthewhelmke/reolink-viewer
+15. **Docker Compose deployment** — Multi-stage Dockerfile (`node:24-trixie-slim` for both the build and runtime stages; moved off the end-of-life Node 20 and Ubuntu 25.04 on 2026-10-21); FFmpeg 7.1 installed from Debian 13 via apt; runs as the unprivileged `node` user; `FFMPEG_PATH` env var added to `src/index.ts` with `bin/ffmpeg` as dev fallback; repository initialized as a git repo and published to GitHub at matthewhelmke/reolink-viewer
+
+16. **Hub certificate pinning** — `src/nvr-tls.ts`; the hub certificate lives in `nvr-cert.pem` (gitignored), mounted read-only into the container by `docker-compose.yml`; the server exits at startup if the file is missing or the hub presents a different certificate
 
 ## Next Tasks
 
