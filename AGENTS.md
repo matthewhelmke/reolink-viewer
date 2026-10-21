@@ -139,6 +139,7 @@ These were discovered during development and are important for any future work:
 - **FLV and RTMP streaming are not usable via HTTP** — The Hub Pro's `/flv` endpoint returns an empty response when HTTP (port 80) is enabled. Port 1935 (RTMP) accepts TCP connections but speaks binary RTMP. Neither is consumable by a browser. All live video goes through the `Snap` API over HTTPS.
 - **MJPEG frame rate** — Typically 1–2 fps on LAN, limited by the round-trip time per `Snap` API call. Acceptable for monitoring; not smooth video.
 - **Hub Pro port status (current)** — 443 (HTTPS): always on. 554 (RTSP): on by default, not used. 80 (HTTP): disabled. 1935 (RTMP): disabled. Do not re-enable HTTP or RTMP without a specific reason.
+- **FFmpeg prints the RTSP password** — When an RTSP input fails, FFmpeg's error output includes the full input URL, password and all. The `/api/rtsp` handler passes FFmpeg's stderr through `redactSecret()` before logging it (added 2026-10-21, after the password was found in `docker logs`). Any new FFmpeg call that takes credentials in its URL must do the same.
 - **RTSP is available but unused** — Port 554 is open. FFmpeg could transcode RTSP to HLS server-side for higher-quality live view. Not implemented.
 - **LAN-only constraint** — This app must never be exposed outside the LAN. There is no web app authentication yet.
 - **Thumbnail aspect ratios** — Cameras have very different native resolutions (5120×1440 panoramic vs. near-square). Sidebar thumbnails use `width: 100%; height: auto` — never introduce a fixed-height thumbnail container. See memory for details.
@@ -149,6 +150,7 @@ These are gaps in the current implementation that are documented for future work
 
 - **Dynamic camera discovery** — `loadCameras()` runs only once at page load. If a new camera is added to the hub, it will not appear in the UI until the page is refreshed.
 - **Mid-clip buffering** — Hub streams at 0.87× real-time; browser plays at 1×. For longer clips the browser may briefly outrun the download and pause. Shows "Buffering…" in the status line and resumes automatically.
+- **RTSP password visible in the process list** — FFmpeg receives the RTSP URL, password included, on its command line, so any local user on the host can see it with `ps` while a high-quality stream runs. FFmpeg 7.1 cannot read its input URL from a file (`-/i` is rejected); a fix would need a local RTSP relay. Accepted as low risk on 2026-10-21.
 - **Sidebar thumbnails are static snapshots** — Currently refreshed every 30 seconds. Live MJPEG thumbnails are possible (one-line change) but 30-second refresh scales better as more cameras are added.
 
 ## Completed Tasks

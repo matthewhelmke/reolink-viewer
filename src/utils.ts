@@ -36,6 +36,16 @@ export function verifySession(value: string, secret: string): { role: string } |
   }
 }
 
+// Replace a secret with *** wherever it appears in text, in raw or URL-encoded
+// form. Used on FFmpeg's error output, which prints its input URL, password
+// included, when an RTSP stream fails to open.
+export function redactSecret(text: string, secret: string): string {
+  if (secret === '') return text;
+  return text
+    .replaceAll(encodeURIComponent(secret), '***')
+    .replaceAll(secret, '***');
+}
+
 // Timing-safe password comparison: compares HMACs so neither length nor content leaks.
 export function safeCompare(a: string, b: string, secret: string): boolean {
   const ha = createHmac('sha256', secret).update(a).digest();

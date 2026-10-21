@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import https from 'node:https';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 // Hoisted above imports by Vitest's transform — intercepts these modules in app.ts too
 vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn() }));
@@ -12,7 +14,7 @@ import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
 import {
   parseCookies, signSession, verifySession,
-  safeCompare, toReolinkTime, hasFiles, sendError, parseDateLocal,
+  safeCompare, toReolinkTime, hasFiles, sendError, parseDateLocal, redactSecret,
 } from './utils.js';
 import { createApp } from './app.js';
 
@@ -211,6 +213,52 @@ describe('sendError', () => {
     const res = mockRes();
     sendError(res, 'something weird');
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+});
+
+// ── redactSecret ──────────────────────────────────────────────────────────────
+
+describe('redactSecret', () => {
+  // '/' and '@' make the URL-encoded form differ from the raw password.
+  const PASSWORD = 'fake/p@ss(word)';
+  const ENCODED  = encodeURIComponent(PASSWORD);   // 'fake%2Fp%40ss(word)'
+
+  it('replaces the raw password', () => {
+    expect(redactSecret(`password is ${PASSWORD}`, PASSWORD)).toBe('password is ***');
+  });
+
+  it('replaces the URL-encoded password', () => {
+    expect(redactSecret(`rtsp://admin:${ENCODED}@hub:554/x`, PASSWORD)).toBe('rtsp://admin:***@hub:554/x');
+  });
+
+  it('replaces every occurrence', () => {
+    expect(redactSecret(`${ENCODED} and ${ENCODED}`, PASSWORD)).toBe('*** and ***');
+  });
+
+  it('leaves text without the password unchanged', () => {
+    expect(redactSecret('Connection refused', PASSWORD)).toBe('Connection refused');
+  });
+
+  it('leaves text unchanged when the secret is empty', () => {
+    expect(redactSecret('Connection refused', '')).toBe('Connection refused');
+  });
+
+  // Real input: the error text FFmpeg itself prints when an RTSP input fails,
+  // using the same arguments as the /api/rtsp handler. Port 1 refuses at once.
+  const ffmpegBin = process.env['FFMPEG_PATH'] ?? 'bin/ffmpeg';
+  it.skipIf(!fs.existsSync(ffmpegBin))('removes the password from real FFmpeg error output', () => {
+    const rtspUrl = `rtsp://testuser:${ENCODED}@127.0.0.1:1/h264Preview_01_main`;
+    const result = spawnSync(ffmpegBin, ['-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', rtspUrl, '-f', 'null', '-'],
+      { encoding: 'utf8', timeout: 10_000 });
+
+    // Ground truth: FFmpeg really does print the password. If this ever fails,
+    // FFmpeg changed its output and this test no longer proves anything.
+    expect(result.stderr).toContain(ENCODED);
+
+    const redacted = redactSecret(result.stderr, PASSWORD);
+    expect(redacted).not.toContain(ENCODED);
+    expect(redacted).not.toContain(PASSWORD);
+    expect(redacted).toContain('rtsp://testuser:***@127.0.0.1:1');
   });
 });
 
