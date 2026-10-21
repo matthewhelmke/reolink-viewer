@@ -172,7 +172,7 @@ reolink-viewer/
 ├── .gitignore
 ├── AGENTS.md             Instructions and context for AI agents working on this project
 ├── docker-compose.yml    Docker Compose service definition
-├── Dockerfile            Multi-stage build: TypeScript compile + ubuntu:25.04 runtime
+├── Dockerfile            Multi-stage build: TypeScript compile + node:24-trixie-slim runtime
 ├── LICENSE.md            MIT License
 ├── package.json          Project metadata and npm scripts
 ├── package-lock.json     Locked dependency versions
