@@ -6,3 +6,6 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    volumes:
+      # The hub's self-signed certificate; the server refuses to start without it.
+      - ./nvr-cert.pem:/app/nvr-cert.pem:ro

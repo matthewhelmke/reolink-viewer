@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
+import https from 'node:https';
 
 // Hoisted above imports by Vitest's transform — intercepts these modules in app.ts too
 vi.mock('reolink-nvr-api/endpoints/system', () => ({ getDevInfo: vi.fn() }));
@@ -30,6 +31,7 @@ const testConfig = {
   nvrPass:        'password',
   ffmpegBin:      '/usr/bin/ffmpeg',
   publicDir:      '/tmp',
+  nvrHttpsAgent:  new https.Agent(),
 };
 
 const mockClient = {

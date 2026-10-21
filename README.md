@@ -133,6 +133,13 @@ The binary goes in `bin/ffmpeg` relative to the project root. The `bin/` directo
    ```
    All six variables are required — the server exits at startup if any are missing.
    `.env` is listed in `.gitignore` and will never be committed to version control.
+5. Save the hub's certificate as `nvr-cert.pem` in the project root:
+   ```
+   openssl s_client -connect 192.168.x.x:443 </dev/null 2>/dev/null | openssl x509 -out nvr-cert.pem
+   ```
+   The hub uses a self-signed certificate. The server trusts that one certificate and refuses any other, so a device impersonating the hub never receives its password or session token. The server exits at startup if the file is missing.
+
+   Run this once, while you know the address answers with your hub. If the hub is reset or replaced, it presents a new certificate and the server refuses to connect; run the command again to save the new one.
 
 ### Running
 
@@ -174,6 +181,7 @@ reolink-viewer/
 ├── docker-compose.yml    Docker Compose service definition
 ├── Dockerfile            Multi-stage build: TypeScript compile + node:24-trixie-slim runtime
 ├── LICENSE.md            MIT License
+├── nvr-cert.pem          The hub's pinned TLS certificate (gitignored, site-specific)
 ├── package.json          Project metadata and npm scripts
 ├── package-lock.json     Locked dependency versions
 ├── README.md
@@ -192,6 +200,8 @@ reolink-viewer/
     ├── index.ts          Server entry point: env validation, Reolink client, app.listen
     ├── app.ts            Express app factory: all routes and middleware
     ├── utils.ts          Pure helper functions (cookies, session signing, error handling)
+    ├── nvr-tls.ts        Pins the hub's TLS certificate for every HTTPS connection to it
+    ├── nvr-tls.test.ts   Tests for certificate pinning, using real TLS connections
     ├── flv-transform.ts  FLV transform stream: rewrites Reolink codec-12 HEVC tags
     │                     to Enhanced FLV 'hvc1' for FFmpeg compatibility
     ├── flv-transform.test.ts  Unit tests for FLV transform

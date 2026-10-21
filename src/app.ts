@@ -48,12 +48,13 @@ export interface AppConfig {
   nvrPass:        string;
   ffmpegBin:      string;
   publicDir:      string;
+  nvrHttpsAgent:  https.Agent;   // trusts only the hub's pinned certificate
 }
 
 export function createApp(client: ReolinkClient, config: AppConfig): express.Application {
   const {
     sessionSecret, viewerPassword, adminPassword,
-    nvrHost, nvrUser, nvrPass, ffmpegBin, publicDir,
+    nvrHost, nvrUser, nvrPass, ffmpegBin, publicDir, nvrHttpsAgent,
   } = config;
 
   // The Hub Pro uses rspCode -6 for "please login first", but the library's built-in
@@ -281,7 +282,7 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
         port: Number(hubUrl.port) || 443,
         path: hubUrl.pathname + hubUrl.search,
         method: 'GET',
-        rejectUnauthorized: false,
+        agent: nvrHttpsAgent,
       },
       (hubRes) => {
         console.log(`[playback ch${channel}] hub status=${hubRes.statusCode} content-type=${hubRes.headers['content-type']} content-length=${hubRes.headers['content-length'] ?? 'unset'}`);
