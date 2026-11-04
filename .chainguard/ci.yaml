@@ -1,0 +1,9 @@
+version: 1
+environment: {}
+checks:
+  vet:
+    cmd: echo "vet passed"
+  test:
+    script: |
+      echo "this check fails on purpose, for a docs example"
+      exit 1
