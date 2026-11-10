@@ -46,6 +46,19 @@ export function redactSecret(text: string, secret: string): string {
     .replaceAll(secret, '***');
 }
 
+// The two live streams the hub serves per camera over RTSP. "main" is full
+// resolution; "sub" is low resolution. On the doorbell, read 2026-11-10: main is
+// HEVC at 2048×2048 and sub is H.264 at 720×720, both 15 fps.
+export const RTSP_STREAMS = ['main', 'sub'];
+
+// Build the hub's RTSP URL for one camera. Channels are 0-indexed in the API but
+// 1-indexed in the path: channel 0 → "01", channel 5 → "06". The path says
+// "h264" whatever the camera's real codec is.
+export function buildRtspUrl(host: string, user: string, pass: string, channel: number, stream: string): string {
+  const channelStr = String(channel + 1).padStart(2, '0');
+  return `rtsp://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:554/h264Preview_${channelStr}_${stream}`;
+}
+
 // Timing-safe password comparison: compares HMACs so neither length nor content leaks.
 export function safeCompare(a: string, b: string, secret: string): boolean {
   const ha = createHmac('sha256', secret).update(a).digest();

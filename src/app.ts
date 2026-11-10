@@ -9,7 +9,7 @@ import { getDevInfo } from 'reolink-nvr-api/endpoints/system';
 import { snapToBuffer } from 'reolink-nvr-api/snapshot';
 import { ReolinkHttpError } from 'reolink-nvr-api/types';
 
-import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal, redactSecret } from './utils.js';
+import { parseCookies, signSession, verifySession, safeCompare, toReolinkTime, sendError, parseDateLocal, redactSecret, RTSP_STREAMS, buildRtspUrl } from './utils.js';
 
 // Divide [start, end] into non-overlapping slices of WINDOW_HOURS each. Searching
 // one slice at a time keeps each hub call well under its undocumented per-call
@@ -374,10 +374,10 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
     hubReq.end();
   });
 
-  // Proxy the hub's RTSP stream for high-quality live view.
+  // Proxy the hub's RTSP stream for live view.
   // FFmpeg reads RTSP over TCP and outputs fragmented MP4 to the browser.
-  // NOTE: The RTSP URL format (h264Preview_0N_main) is the standard Reolink pattern.
-  // If the hub uses a different URL scheme this will need adjustment after testing.
+  // ?stream=sub asks for the camera's low-resolution stream, for slow clients
+  // such as an old tablet; without it the full-resolution main stream is used.
   app.get('/api/rtsp/:channel', (req, res) => {
     const channel = parseInt(req.params['channel'] ?? '', 10);
     if (isNaN(channel) || channel < 0) {
@@ -385,9 +385,15 @@ export function createApp(client: ReolinkClient, config: AppConfig): express.App
       return;
     }
 
-    // Reolink RTSP URL: channels are 1-indexed in the path (channel 0 → "01", channel 1 → "02", …)
-    const channelStr = String(channel + 1).padStart(2, '0');
-    const rtspUrl = `rtsp://${encodeURIComponent(nvrUser)}:${encodeURIComponent(nvrPass)}@${nvrHost}:554/h264Preview_${channelStr}_main`;
+    // Only a known stream name may reach the URL. A repeated parameter arrives
+    // as an array and is refused too.
+    const stream = req.query['stream'] ?? 'main';
+    if (typeof stream !== 'string' || !RTSP_STREAMS.includes(stream)) {
+      res.status(400).json({ error: 'Invalid stream: use main or sub' });
+      return;
+    }
+
+    const rtspUrl = buildRtspUrl(nvrHost, nvrUser, nvrPass, channel, stream);
 
     const ffmpeg = spawn(ffmpegBin, [
       '-loglevel', 'error',
