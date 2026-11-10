@@ -60,6 +60,8 @@ Note: this app uses the [Reolink native HTTPS API](https://github.com/verheesj/r
 
 The Live tab offers two modes. **Low quality** uses MJPEG: the server fetches a JPEG snapshot from each camera roughly every half second and streams the frames to the browser, producing 1–2 frames per second on a typical home LAN. **High quality** uses the hub's RTSP stream: FFmpeg reads the stream over TCP and transcodes it to H.264 fragmented MP4, which the browser plays as true video. High quality starts in ~2 seconds and provides full frame rate.
 
+A slow client can ask for the camera's low-resolution stream instead: `GET /api/rtsp/:channel?stream=sub`. On the doorbell that is 720×720 against 2048×2048 for the default `main`, about a tenth of the data. Any other value of `stream` is refused with 400. The browser frontend always uses `main`.
+
 ### A note on recording playback
 
 The Hub Pro stores recordings as H.265 (HEVC) in a non-standard FLV container. The server rewrites these in-flight to the Enhanced FLV format that FFmpeg understands, then transcodes to H.264 fragmented MP4 (scaled to 1920px wide) for browser playback. The browser streams the MP4 directly as it arrives, so video starts playing within 1–2 seconds of clicking Play. The hub streams recordings at roughly real-time speed, so longer clips continue downloading in the background while playing — brief buffering pauses are normal.

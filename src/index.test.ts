@@ -15,6 +15,7 @@ import { ReolinkHttpError } from 'reolink-nvr-api/types';
 import {
   parseCookies, signSession, verifySession,
   safeCompare, toReolinkTime, hasFiles, sendError, parseDateLocal, redactSecret,
+  buildRtspUrl,
 } from './utils.js';
 import { createApp } from './app.js';
 
@@ -536,6 +537,40 @@ describe('GET /api/rtsp/:channel — input validation', () => {
       .get('/api/rtsp/abc')
       .set('Cookie', authCookie('viewer'));
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a stream name other than main or sub', async () => {
+    const res = await request(app)
+      .get('/api/rtsp/0?stream=../h264Preview_01_main')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/main or sub/);
+  });
+
+  it('returns 400 when stream is given twice', async () => {
+    const res = await request(app)
+      .get('/api/rtsp/0?stream=sub&stream=main')
+      .set('Cookie', authCookie('viewer'));
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── buildRtspUrl ──────────────────────────────────────────────────────────────
+
+describe('buildRtspUrl', () => {
+  it('uses a 1-indexed, two-digit channel and the main stream', () => {
+    expect(buildRtspUrl('hub', 'admin', 'pw', 0, 'main'))
+      .toBe('rtsp://admin:pw@hub:554/h264Preview_01_main');
+  });
+
+  it('names the sub stream when asked', () => {
+    expect(buildRtspUrl('hub', 'admin', 'pw', 5, 'sub'))
+      .toBe('rtsp://admin:pw@hub:554/h264Preview_06_sub');
+  });
+
+  it('URL-encodes the user name and password', () => {
+    expect(buildRtspUrl('hub', 'a@b', 'p:w/#', 9, 'main'))
+      .toBe('rtsp://a%40b:p%3Aw%2F%23@hub:554/h264Preview_10_main');
   });
 });
 
