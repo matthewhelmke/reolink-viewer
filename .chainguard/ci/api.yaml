@@ -1,0 +1,11 @@
+version: 1
+checks:
+  test:
+    environment: go
+    cmd: go test ./...
+    workdir: services/api
+    trigger: [presubmit, postsubmit]
+    when:
+      changed: ["services/api/**", ".chainguard/ci/api.yaml", ".chainguard/ci/env/go.yaml"]
+    network:
+      egress: [proxy.golang.org, sum.golang.org]

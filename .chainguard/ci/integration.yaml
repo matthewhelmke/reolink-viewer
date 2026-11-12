@@ -1,0 +1,9 @@
+version: 1
+environment:
+  packages: [go]
+  services: [postgres, redis]
+checks:
+  integration:
+    cmd: go test ./integration/...
+    network:
+      egress: [proxy.golang.org, sum.golang.org]

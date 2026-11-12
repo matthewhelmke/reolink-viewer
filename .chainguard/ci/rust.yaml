@@ -1,0 +1,11 @@
+version: 1
+environment:
+  packages: [rust-1.99, build-base]
+  caches:
+    cargo: {}
+checks:
+  test:
+    cmd: cargo test --locked
+    trigger: [presubmit, postsubmit]
+    network:
+      egress: [index.crates.io, static.crates.io]

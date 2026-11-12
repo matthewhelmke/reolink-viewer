@@ -1,0 +1,13 @@
+version: 1
+name: postgres
+packages: [busybox, postgresql-18, postgresql-18-client, su-exec]
+cmd: [sh, ./postgres.sh]
+timeout: 60s
+inputs:
+  port:
+    type: integer
+    default: "5432"
+    env: PGPORT
+exports:
+  PGHOST: 127.0.0.1
+  PGUSER: postgres

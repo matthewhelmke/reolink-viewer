@@ -1,0 +1,11 @@
+version: 1
+environment:
+  packages: [openjdk-21-default-jdk, maven-3.9]
+  caches:
+    java: {}
+checks:
+  test:
+    cmd: mvn --batch-mode verify
+    trigger: [presubmit, postsubmit]
+    network:
+      egress: [repo.maven.apache.org]

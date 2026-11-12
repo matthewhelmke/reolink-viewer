@@ -1,0 +1,14 @@
+version: 1
+checks:
+  test:
+    environment: node
+    workdir: web
+    steps:
+      - name: install
+        cmd: npm ci
+      - name: test
+        cmd: npm test
+    when:
+      changed: ["web/**", ".chainguard/ci/web.yaml", ".chainguard/ci/env/node.yaml"]
+    network:
+      egress: [registry.npmjs.org]

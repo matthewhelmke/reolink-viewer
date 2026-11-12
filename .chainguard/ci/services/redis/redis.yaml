@@ -1,0 +1,7 @@
+version: 1
+name: redis
+packages: [busybox, redis-8.8, redis-cli-8.8]
+cmd: [sh, ./redis.sh]
+timeout: 60s
+exports:
+  REDIS_URL: redis://127.0.0.1:6379

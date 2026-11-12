@@ -1,0 +1,3 @@
+version: 1
+environment:
+  packages: [nodejs-22, npm]

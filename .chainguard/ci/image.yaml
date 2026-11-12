@@ -1,0 +1,12 @@
+version: 1
+environment:
+  services: [docker]
+checks:
+  build:
+    script: |
+      docker build --tag example:ci .
+      docker run --rm example:ci
+    network:
+      egress:
+        - cgr.dev
+        - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
