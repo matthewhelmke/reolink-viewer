@@ -1,0 +1,8 @@
+version: 1
+environment:
+  packages: [go, git, claude]
+checks:
+  vet:
+    cmd: go vet ./...
+  test:
+    cmd: go test ./...
