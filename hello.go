@@ -3,7 +3,7 @@ package hello
 
 // Greeting returns a greeting for name.
 func Greeting(name string) string {
-	return "Hello, " + name + "!"
+	return "Hello, " + name + "."
 }
 
 // Farewell returns a farewell for name.
